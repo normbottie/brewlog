@@ -1,16 +1,21 @@
--- Brewlog — Supabase schema (v2, with accounts)
+-- Brewlog — Supabase schema (v3, with accounts)
 --
--- Paste this into the Supabase SQL editor and run it. It is safe to run on a
--- fresh project or over the v1 schema; the migration block near the bottom
--- adopts any existing rows into your account.
+-- Paste this into the Supabase SQL editor and run it. Safe on a fresh project
+-- or over an older Brewlog schema, and safe to run more than once.
 --
--- Sign-in is a passwordless magic link, so there is nothing else to configure
--- beyond one setting: Authentication → URL Configuration → Redirect URLs must
--- include your app's address, e.g.
---     https://<you>.github.io/brewlog/
+-- Also set Authentication → URL Configuration → Site URL and Redirect URLs to
+-- your app's address, e.g. https://<you>.github.io/brewlog/
 --
 -- Every row belongs to exactly one account and is invisible to every other
--- account. Sharing a log between people is deliberately not supported here.
+-- account.
+--
+-- NOTE: the storage section at the bottom is wrapped in exception handlers on
+-- purpose. On many projects `storage.objects` is owned by another role, so
+-- creating policies on it raises "42501: must be owner of table objects". The
+-- SQL editor runs this whole file as ONE transaction, so an unhandled error
+-- there would roll back the tables above it and leave you with nothing. If the
+-- storage part is skipped, the app still syncs — only bag image upload is
+-- affected, and the notices tell you how to finish it in the dashboard.
 
 -- ---------------------------------------------------------------- tables --
 
@@ -54,7 +59,7 @@ create table if not exists public.cafes (
   deleted     boolean default false
 );
 
--- upgrading from v1, where these columns did not exist
+-- upgrading from a version without accounts
 alter table public.beans add column if not exists user_id uuid references auth.users (id) on delete cascade;
 alter table public.cafes add column if not exists user_id uuid references auth.users (id) on delete cascade;
 
@@ -66,7 +71,7 @@ create index if not exists cafes_user_updated_idx on public.cafes (user_id, upda
 alter table public.beans enable row level security;
 alter table public.cafes enable row level security;
 
--- drop the v1 shared-key policies if they are still there
+-- remove the older shared-key policies if they are still present
 drop policy if exists "anon full access" on public.beans;
 drop policy if exists "anon full access" on public.cafes;
 
@@ -82,41 +87,13 @@ create policy "own cafes" on public.cafes
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- -------------------------------------------------------------- storage --
--- Bag images live at bag-images/<user-id>/<bean-id>.jpg. The bucket is public
--- so the app can show images with a plain <img> tag, but only the owner can
--- write into their own folder. Anyone who guesses a full URL can view that
--- one image; if that bothers you, set public = false and switch
--- beanImageURL() over to signed URLs.
-
-insert into storage.buckets (id, name, public)
-values ('bag-images', 'bag-images', true)
-on conflict (id) do update set public = true;
-
-drop policy if exists "bag images read" on storage.objects;
-create policy "bag images read" on storage.objects
-  for select to anon, authenticated
-  using (bucket_id = 'bag-images');
-
-drop policy if exists "bag images write" on storage.objects;
-create policy "bag images write" on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'bag-images' and (storage.foldername(name))[1] = auth.uid()::text);
-
-drop policy if exists "bag images update" on storage.objects;
-create policy "bag images update" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'bag-images' and (storage.foldername(name))[1] = auth.uid()::text);
-
-drop policy if exists "bag images delete" on storage.objects;
-create policy "bag images delete" on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'bag-images' and (storage.foldername(name))[1] = auth.uid()::text);
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.beans to authenticated;
+grant select, insert, update, delete on public.cafes to authenticated;
 
 -- ------------------------------------------------------------ migration --
 -- Adopt rows created before accounts existed. Sign in through the app once so
--- your user exists, then run this. With exactly one user it needs no editing;
--- with several, replace the subquery with your own id.
+-- your account exists, then run this file again.
 
 do $$
 declare
@@ -128,13 +105,12 @@ begin
   select count(*) into orphan_cafes from public.cafes where user_id is null;
 
   if orphan_beans = 0 and orphan_cafes = 0 then
-    raise notice 'Nothing to migrate.';
+    raise notice 'Migration: nothing to adopt.';
     return;
   end if;
 
   if (select count(*) from auth.users) <> 1 then
-    raise notice 'Found % orphan beans and % orphan cafes, but there is not exactly one user. '
-                 'Set `target` to the right auth.users id by hand and re-run.',
+    raise notice 'Migration: % orphan beans and % orphan cafes found, but there is not exactly one user. Set target to the right auth.users id by hand and re-run.',
                  orphan_beans, orphan_cafes;
     return;
   end if;
@@ -142,5 +118,66 @@ begin
   select id into target from auth.users limit 1;
   update public.beans set user_id = target where user_id is null;
   update public.cafes set user_id = target where user_id is null;
-  raise notice 'Adopted % beans and % cafes into %.', orphan_beans, orphan_cafes, target;
+  raise notice 'Migration: adopted % beans and % cafes.', orphan_beans, orphan_cafes;
+end $$;
+
+-- -------------------------------------------------------------- storage --
+-- Bag images live at bag-images/<user-id>/<bean-id>.jpg.
+--
+-- Everything below is best-effort. If your project does not let you touch
+-- storage from SQL, nothing here aborts the script — read the notices and
+-- finish those bits in the dashboard instead.
+
+do $$
+begin
+  insert into storage.buckets (id, name, public)
+  values ('bag-images', 'bag-images', true)
+  on conflict (id) do update set public = true;
+  raise notice 'Storage: bucket bag-images ready.';
+exception when others then
+  raise notice 'Storage: could not create the bucket (%). Create it by hand: Storage -> New bucket -> name it bag-images -> tick Public.', sqlerrm;
+end $$;
+
+do $$
+declare
+  stmt text;
+begin
+  foreach stmt in array array[
+    $p$drop policy if exists "bag images read" on storage.objects$p$,
+    $p$create policy "bag images read" on storage.objects
+        for select to anon, authenticated
+        using (bucket_id = 'bag-images')$p$,
+    $p$drop policy if exists "bag images write" on storage.objects$p$,
+    $p$create policy "bag images write" on storage.objects
+        for insert to authenticated
+        with check (bucket_id = 'bag-images'
+                    and (storage.foldername(name))[1] = auth.uid()::text)$p$,
+    $p$drop policy if exists "bag images update" on storage.objects$p$,
+    $p$create policy "bag images update" on storage.objects
+        for update to authenticated
+        using (bucket_id = 'bag-images'
+               and (storage.foldername(name))[1] = auth.uid()::text)$p$,
+    $p$drop policy if exists "bag images delete" on storage.objects$p$,
+    $p$create policy "bag images delete" on storage.objects
+        for delete to authenticated
+        using (bucket_id = 'bag-images'
+               and (storage.foldername(name))[1] = auth.uid()::text)$p$
+  ]
+  loop
+    execute stmt;
+  end loop;
+  raise notice 'Storage: image policies installed.';
+exception when others then
+  raise notice 'Storage: could not set image policies (%). Sync still works; bag photos just stay on each device. To fix, add the policies under Storage -> Policies in the dashboard.', sqlerrm;
+end $$;
+
+-- --------------------------------------------------------- schema cache --
+-- PostgREST caches the list of tables. Without this, a brand-new table can
+-- 404 for a minute or two even though it exists.
+
+notify pgrst, 'reload schema';
+
+do $$
+begin
+  raise notice 'Done. Tables: beans, cafes. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
 end $$;

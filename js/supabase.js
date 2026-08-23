@@ -105,12 +105,37 @@ export async function downloadImage(url) {
   return res.blob();
 }
 
-/** Cheap reachability + schema check used by the Settings screen. */
+/** Reachability + schema check used by the Settings screen. */
 export async function testConnection() {
   const cfg = getConfig();
   if (!cfg) throw new Error('Not configured');
-  const res = await fetch(`${cfg.url}/rest/v1/beans?select=id&limit=1`, { headers: await headers(cfg) });
-  if (res.status === 404) throw new Error('Connected, but the `beans` table is missing — run schema.sql');
-  await jsonOrThrow(res);
-  return true;
+
+  let res;
+  try {
+    res = await fetch(`${cfg.url}/rest/v1/beans?select=id&limit=1`, { headers: await headers(cfg) });
+  } catch {
+    throw new Error('Could not reach that project — check the URL and your connection');
+  }
+
+  if (res.ok) return true;
+
+  let body = null;
+  try { body = await res.json(); } catch {}
+  const code = body?.code || '';
+  const msg = body?.message || '';
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('The project answered but rejected the key — check you copied the anon or publishable key, not a secret one');
+  }
+  // PGRST205: the table is not in PostgREST's schema cache. Either it was
+  // never created, or it was created seconds ago and the cache is stale.
+  if (res.status === 404 || code === 'PGRST205' || code === '42P01') {
+    throw new Error(
+      'Reached the project, but it has no `beans` table. Run schema.sql in the SQL editor — ' +
+      'and check the Results pane for a red error, since the editor runs the whole script as ' +
+      'one transaction and rolls everything back if any line fails. If you just ran it, wait ' +
+      '30 seconds and try again.'
+    );
+  }
+  throw new Error(msg || `Supabase error ${res.status}`);
 }
