@@ -53,14 +53,18 @@ function addressOf(tags = {}) {
  * Cafes near a point.
  * @returns {Promise<Array<{osm_id, name, address, lat, lng, distance, tags}>>}
  */
-export async function nearbyCafes({ lat, lng }, radius = 1200, limit = 40) {
-  const query = `[out:json][timeout:20];
+export async function nearbyCafes({ lat, lng }, radius = 1500) {
+  // Deliberately broad: some cafes are tagged as bakeries, restaurants or
+  // plain shops that happen to sell coffee.
+  const a = `(around:${radius},${lat},${lng})`;
+  const query = `[out:json][timeout:25];
 (
-  node["amenity"~"^(cafe|coffee_shop)$"](around:${radius},${lat},${lng});
-  way["amenity"~"^(cafe|coffee_shop)$"](around:${radius},${lat},${lng});
-  node["cuisine"="coffee_shop"](around:${radius},${lat},${lng});
+  nwr["amenity"="cafe"]${a};
+  nwr["shop"="coffee"]${a};
+  nwr["cuisine"~"coffee",i]${a};
+  nwr["amenity"="fast_food"]["cuisine"~"coffee",i]${a};
 );
-out center ${limit};`;
+out center;`;
 
   let lastErr = null;
   for (const url of ENDPOINTS) {
@@ -70,7 +74,14 @@ out center ${limit};`;
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'data=' + encodeURIComponent(query),
       });
-      if (!res.ok) throw new Error(`Overpass ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(
+          res.status === 429 ? 'The cafe database is rate-limiting us — try again in a minute'
+          : res.status === 504 ? 'The cafe database timed out — try again'
+          : `Cafe lookup failed (${res.status})${body ? ': ' + body.slice(0, 120) : ''}`
+        );
+      }
       const json = await res.json();
       const seen = new Set();
       return (json.elements || [])
@@ -100,4 +111,23 @@ out center ${limit};`;
     }
   }
   throw new Error(lastErr?.message || 'Could not reach the cafe database');
+}
+
+/**
+ * Widen the search until something turns up, so "nothing here" is a real
+ * answer rather than an artefact of the starting radius.
+ * @returns {Promise<{results: Array, radius: number}>}
+ */
+export async function findCafesAround(point, radii = [1500, 5000, 15000]) {
+  let lastErr = null;
+  for (const radius of radii) {
+    try {
+      const results = await nearbyCafes(point, radius);
+      if (results.length) return { results, radius };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (lastErr) throw lastErr;
+  return { results: [], radius: radii[radii.length - 1] };
 }

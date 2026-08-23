@@ -461,6 +461,14 @@ export const STUDIO_PROMPT = [
   'along the left edge. Slightly above eye level, straight vertical edges, no fisheye or',
   'dramatic perspective. Centred, filling most of the frame with even margins.',
   '',
+  'THE SIDE GUSSET IS THE ONE EXCEPTION to reproducing the packaging exactly: leave it',
+  'completely blank. Omit every graphic and every word printed on that side panel —',
+  'brewing instructions, icons, QR codes, contact details, URLs, legal text, all of it.',
+  'Render the side panel as one clean, flat, unbroken block of colour sampled from the',
+  'adjacent solid colour of the bag, shaded naturally by the lighting. Do not replace the',
+  'side print with different text, placeholder lettering, a logo or a pattern. The front',
+  'face keeps all of its original artwork and text, unchanged.',
+  '',
   'LIGHTING AND BACKGROUND: seamless pure-white studio sweep. Soft, even, diffused light',
   'from the upper left, gentle highlights along the bag edges, and a soft contact shadow',
   'directly beneath the bag. Crisp focus edge to edge.',
@@ -611,7 +619,65 @@ async function openaiRender(cfg, blob) {
 
 /* ================= read the label ================= */
 
-const READ_MODELS = { gemini: 'gemini-3.1-flash', openai: 'gpt-4.1-mini' };
+/* Google renames and retires these faster than any hard-coded default can
+   keep up with, so ask the key which models it actually has and cache the
+   answer. The list below is only the fallback when that call fails. */
+const GEMINI_READ_FALLBACKS = [
+  'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.5-flash',
+  'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-2.5-flash',
+];
+const LS_READ_MODEL = 'brewlog.img.readmodel';
+
+function scoreReadModel(id) {
+  if (!/^gemini-/.test(id)) return -1;
+  // these can't do image-in / text-out
+  if (/image|imagen|tts|audio|embedding|aqa|live|veo|robotics/.test(id)) return -1;
+  const version = parseFloat((/gemini-(\d+(?:\.\d+)?)/.exec(id) || [])[1] || '0');
+  if (!version) return -1;
+  let score = version * 10;
+  if (/flash-lite/.test(id)) score += 6;        // cheapest that can still read a label
+  else if (/flash/.test(id)) score += 4;
+  else if (/pro/.test(id)) score += 1;          // works, but overkill and pricier
+  else return -1;
+  if (/preview|exp|latest|\d{3}$/.test(id)) score -= 8;   // prefer stable, pinned ids
+  return score;
+}
+
+/** Ask the key what it can use for reading a label; cached in localStorage. */
+async function pickReadModel(cfg) {
+  try {
+    const cached = localStorage.getItem(LS_READ_MODEL);
+    if (cached) return cached;
+  } catch {}
+
+  try {
+    const res = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
+      { headers: { 'x-goog-api-key': cfg.key } }
+    );
+    if (res.ok) {
+      const json = await res.json();
+      const usable = (json.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => String(m.name || '').replace(/^models\//, ''))
+        .map(id => ({ id, score: scoreReadModel(id) }))
+        .filter(m => m.score > 0)
+        .sort((a, b) => b.score - a.score);
+      if (usable.length) {
+        try { localStorage.setItem(LS_READ_MODEL, usable[0].id); } catch {}
+        return usable[0].id;
+      }
+    }
+  } catch { /* fall through to the static list */ }
+
+  return GEMINI_READ_FALLBACKS[0];
+}
+
+export function forgetReadModel() {
+  try { localStorage.removeItem(LS_READ_MODEL); } catch {}
+}
+
+const READ_MODELS = { openai: 'gpt-4.1-mini' };
 
 function parseLabelJSON(text) {
   if (!text) throw new Error('The model returned nothing');
@@ -677,49 +743,74 @@ export async function readBagLabel(img) {
   }
 
   const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key };
-  const model = READ_MODELS.gemini;
 
-  // Interactions first, generateContent as the fallback — same as the renderer.
-  try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        input: [
-          { type: 'text', text: READ_LABEL_PROMPT },
-          { type: 'image', mime_type: 'image/jpeg', data: b64 },
-        ],
-      }),
-    });
-    const json = await res.json();
-    if (res.ok) return parseLabelJSON(findText(json));
-    if (res.status !== 404 && res.status !== 400) {
-      throw new Error(json?.error?.message || `Gemini error ${res.status}`);
+  /* Try the discovered model, then each fallback, across both endpoints.
+     A "model not found" is worth retrying with another name; anything else
+     (bad key, quota, safety block) is reported straight away. */
+  const discovered = await pickReadModel(cfg);
+  const candidates = [discovered, ...GEMINI_READ_FALLBACKS.filter(m => m !== discovered)];
+  let lastErr = null;
+
+  for (const model of candidates) {
+    for (const endpoint of ['interactions', 'generateContent']) {
+      let res, json;
+      try {
+        if (endpoint === 'interactions') {
+          res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model,
+              input: [
+                { type: 'text', text: READ_LABEL_PROMPT },
+                { type: 'image', mime_type: 'image/jpeg', data: b64 },
+              ],
+            }),
+          });
+        } else {
+          res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: READ_LABEL_PROMPT },
+                    { inline_data: { mime_type: 'image/jpeg', data: b64 } },
+                  ],
+                }],
+                generationConfig: { responseMimeType: 'application/json' },
+              }),
+            }
+          );
+        }
+        json = await res.json();
+      } catch (err) {
+        lastErr = err;
+        continue;
+      }
+
+      if (res.ok) {
+        // remember what worked so the next read skips straight to it
+        try { localStorage.setItem(LS_READ_MODEL, model); } catch {}
+        return parseLabelJSON(findText(json));
+      }
+
+      const msg = json?.error?.message || `Gemini error ${res.status}`;
+      lastErr = new Error(msg);
+      // unknown model or unsupported method — try the next name
+      if (/not found|not supported|unsupported|unknown/i.test(msg) || res.status === 404) continue;
+      if (res.status === 400 && endpoint === 'interactions') continue;
+      throw lastErr;   // real failure: bad key, quota, blocked content
     }
-  } catch (err) {
-    if (/Could not read the label|returned nothing/.test(err.message || '')) throw err;
   }
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: READ_LABEL_PROMPT },
-            { inline_data: { mime_type: 'image/jpeg', data: b64 } },
-          ],
-        }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    }
+  forgetReadModel();
+  throw new Error(
+    (lastErr?.message || 'No usable model') +
+    ' — none of the models your key offers accepted the request.'
   );
-  const json = await res.json();
-  if (!res.ok) throw new Error(json?.error?.message || `Gemini error ${res.status}`);
-  return parseLabelJSON(findText(json));
 }
 
 /** Render via the configured API, then normalise to OUT_W x OUT_H. */

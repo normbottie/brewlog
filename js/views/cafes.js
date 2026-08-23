@@ -2,7 +2,7 @@
 
 import { listCafes, saveCafe, blankCafe } from '../store.js';
 import { h, esc, icon, stars, empty, sheet, toast, bindStars } from '../ui.js';
-import { nearbyCafes, locate, formatDistance, distanceMeters } from '../places.js';
+import { findCafesAround, locate, formatDistance, distanceMeters } from '../places.js';
 
 let mapRef = null;
 
@@ -20,10 +20,13 @@ export async function render(root) {
     </div>
     <div class="view">
       <div id="map"></div>
-      <button class="btn-primary btn-block" data-near style="margin-top:12px">
-        ${icon('locate')} Cafes near me
-      </button>
-      <div class="hint" style="margin-top:8px">Or tap the map to drop a pin, or use + to search an address.</div>
+      <div style="display:flex;gap:9px;margin-top:12px">
+        <button class="btn-primary" style="flex:1;white-space:nowrap" data-near>
+          ${icon('locate')} Near me
+        </button>
+        <button data-here style="flex:1;white-space:nowrap">This map area</button>
+      </div>
+      <div class="hint" data-nearstatus style="margin-top:8px">Or tap the map to drop a pin, or use + to search an address.</div>
       <div class="search-bar" style="margin-top:16px">
         ${icon('search')}
         <input type="search" placeholder="Search cafes and notes…" data-q>
@@ -64,24 +67,44 @@ export async function render(root) {
 
   view.querySelector('[data-add]').onclick = () => addCafeSheet(null, cafes, paint);
 
-  view.querySelector('[data-near]').onclick = async (e) => {
-    const btn = e.currentTarget;
+  const nearStatus = view.querySelector('[data-nearstatus]');
+
+  async function runSearch(btn, getPoint, label) {
     const original = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Finding you…`;
+    btn.innerHTML = `<span class="spinner"></span> ${label}`;
+    nearStatus.innerHTML = `<span class="busy"><span class="spinner"></span>Searching OpenStreetMap…</span>`;
     try {
-      const here = await locate();
-      if (mapRef) mapRef.setView([here.lat, here.lng], 15);
-      btn.innerHTML = `<span class="spinner"></span> Looking for cafes…`;
-      const found = await nearbyCafes(here, 1500);
-      showNearbySheet(found, here, cafes, paint);
+      const point = await getPoint();
+      if (mapRef) mapRef.setView([point.lat, point.lng], 15);
+      const { results, radius } = await findCafesAround(point);
+      const where = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
+      if (!results.length) {
+        nearStatus.innerHTML =
+          `No cafes are mapped within 15&nbsp;km of ${esc(where)}. That is OpenStreetMap's ` +
+          `coverage, not an error — tap the map to add one yourself.`;
+        return;
+      }
+      nearStatus.textContent =
+        `${results.length} found within ${formatDistance(radius)} of ${where}.`;
+      showNearbySheet(results, point, cafes, paint);
     } catch (err) {
-      toast(err.message || 'Could not find nearby cafes');
+      nearStatus.textContent = err.message || 'Could not search for cafes';
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;
     }
-  };
+  }
+
+  view.querySelector('[data-near]').onclick = (e) =>
+    runSearch(e.currentTarget, () => locate(), 'Finding you…');
+
+  view.querySelector('[data-here]').onclick = (e) =>
+    runSearch(e.currentTarget, async () => {
+      if (!mapRef) throw new Error('Map is still loading');
+      const c = mapRef.getCenter();
+      return { lat: c.lat, lng: c.lng };
+    }, 'Searching…');
 
   root.appendChild(view);
   paint();
@@ -139,12 +162,9 @@ function whenLeaflet() {
 
 /** Results from Overpass, with the ones you've already rated marked. */
 function showNearbySheet(found, here, cafes, onDone) {
-  if (!found.length) {
-    toast('No cafes mapped within 1.5 km — drop a pin instead');
-    return;
-  }
+  if (!found.length) return;
 
-  sheet(`${found.length} cafe${found.length === 1 ? '' : 's'} near you`, (close) => {
+  sheet(`${found.length} cafe${found.length === 1 ? '' : 's'} nearby`, (close) => {
     const already = (c) =>
       cafes.find(x => Number.isFinite(x.lat) &&
         distanceMeters({ lat: x.lat, lng: x.lng }, { lat: c.lat, lng: c.lng }) < 60);
