@@ -79,14 +79,14 @@ export async function signIn(email) {
   return clean;
 }
 
-/** Sign in with the 6-digit code from the sign-in email.
+/** Sign in with the numeric code from the sign-in email.
  *  The magic link and the code come from the same email; the template must
  *  include {{ .Token }} for the code to appear. */
 export async function verifyCode(email, code) {
   const clean = String(email || '').trim();
   const token = String(code || '').replace(/\D/g, '');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('Enter the email the code was sent to');
-  if (token.length !== 6) throw new Error('The code is 6 digits');
+  if (token.length < 6 || token.length > 10) throw new Error('Enter the full code from the email');
   /* 'email' is the modern unified type; 'magiclink' and 'signup' are the
      legacy types for returning and first-time users respectively. */
   let payload = null;

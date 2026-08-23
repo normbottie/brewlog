@@ -1,6 +1,6 @@
 /* Sign-in gate — the app requires an account.
    Two ways in: tap the emailed link (works when the email opens in the same
-   browser), or type the 6-digit code from that same email (works everywhere,
+   browser), or type the code from that same email (works everywhere,
    and is the only way in from the installed app on iOS, where mail links
    always open Safari instead). */
 
@@ -26,7 +26,8 @@ export function render(root) {
     <div class="glass card-pad">
       <div class="field">
         <label for="l-email">Email</label>
-        <input id="l-email" data-email type="email" inputmode="email" autocomplete="email"
+        <input id="l-email" data-email type="text" inputmode="email" autocomplete="off"
+               autocapitalize="none" autocorrect="off" spellcheck="false" name="brewlog-signin"
                placeholder="you@example.com" value="${esc(savedEmail)}">
       </div>
       <button class="btn-primary btn-block" data-send>Email me a sign-in code</button>
@@ -35,9 +36,9 @@ export function render(root) {
       <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
 
       <div class="field">
-        <label for="l-code">Enter the 6-digit code from the email</label>
+        <label for="l-code">Enter the code from the email</label>
         <input id="l-code" data-code inputmode="numeric" autocomplete="one-time-code"
-               maxlength="6" placeholder="••••••"
+               maxlength="10" placeholder="••••••••"
                style="letter-spacing:.4em;text-align:center;font-size:20px;font-variant-numeric:tabular-nums">
       </div>
       <button class="btn-block" data-verify>Verify code</button>
@@ -64,7 +65,7 @@ export function render(root) {
     try {
       const sent = await signIn(emailEl.value);
       try { localStorage.setItem(LS_EMAIL, sent); } catch {}
-      status.textContent = `Sent to ${sent}. Type the 6-digit code below, or tap the link if the email opens here.`;
+      status.textContent = `Sent to ${sent}. Type the code below, or tap the link if the email opens here.`;
       codeEl.focus();
     } catch (err) {
       status.textContent = /sign.?ups?.*(disabled|not allowed)/i.test(err.message || '')
