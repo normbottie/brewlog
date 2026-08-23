@@ -25,10 +25,10 @@ export function render(root) {
 
     <div class="glass card-pad">
       <div class="field">
-        <label for="l-email">Email</label>
-        <input id="l-email" data-email type="text" inputmode="email" autocomplete="off"
-               autocapitalize="none" autocorrect="off" spellcheck="false" name="brewlog-signin"
-               placeholder="you@example.com" value="${esc(savedEmail)}">
+        <label for="l-addr">Email</label>
+        <input id="l-addr" data-email type="text" inputmode="email" autocomplete="off"
+               autocapitalize="none" autocorrect="off" spellcheck="false" name="bl-addr"
+               readonly value="${esc(savedEmail)}">
       </div>
       <button class="btn-primary btn-block" data-send>Email me a sign-in code</button>
       <div class="hint" data-status style="margin-top:10px"></div>
@@ -56,6 +56,30 @@ export function render(root) {
   const emailEl = view.querySelector('[data-email]');
   const codeEl = view.querySelector('[data-code]');
   const status = view.querySelector('[data-status]');
+
+  /* The field starts readonly so Safari has nothing to attach its contact
+     autofill to on load; the first real touch unlocks it. pointerdown fires
+     before focus, so the keyboard still opens normally. */
+  const unlock = () => { emailEl.removeAttribute('readonly'); };
+  emailEl.addEventListener('pointerdown', unlock);
+  emailEl.addEventListener('focus', () => {
+    if (emailEl.hasAttribute('readonly')) {
+      unlock();
+      emailEl.blur();
+      setTimeout(() => emailEl.focus(), 0);
+    }
+  });
+
+  /* iOS autofill or a paste drops the whole code in at once — verify it
+     without a second tap. Typing digit by digit still uses the button. */
+  let prevLen = 0;
+  codeEl.addEventListener('input', () => {
+    const len = codeEl.value.replace(/\D/g, '').length;
+    if (len >= 6 && len - prevLen >= 4) {
+      view.querySelector('[data-verify]').click();
+    }
+    prevLen = len;
+  });
 
   view.querySelector('[data-send]').onclick = async (e) => {
     if (!isConfigured()) { status.textContent = 'The app is missing its project configuration.'; return; }

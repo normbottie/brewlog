@@ -15,6 +15,7 @@ console.log('tabbar hidden:', await page.$eval('#tabbar', e => e.hidden));
 console.log('app content leaked:', !!(await page.$('.bean-grid, .search-bar')));
 
 // 2. code validation is local-first
+await page.click('[data-email]');
 await page.fill('[data-email]', 'norm@example.com');
 await page.fill('[data-code]', '123');
 await page.click('[data-verify]');
