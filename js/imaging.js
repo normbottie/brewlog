@@ -412,8 +412,13 @@ const LS_KEY = 'brewlog.img.key';
 const LS_MODEL = 'brewlog.img.model';
 
 export const PROVIDERS = {
-  gemini: { label: 'Google Gemini', defaultModel: 'gemini-2.5-flash-image' },
-  openai: { label: 'OpenAI', defaultModel: 'gpt-image-1' },
+  gemini: {
+    label: 'Google Gemini',
+    defaultModel: 'gemini-3.1-flash-image',
+    // cheapest first; all are "Nano Banana" image models
+    models: ['gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image', 'gemini-3-pro-image'],
+  },
+  openai: { label: 'OpenAI', defaultModel: 'gpt-image-1', models: ['gpt-image-1'] },
 };
 
 export function getImageAPIConfig() {
@@ -448,34 +453,107 @@ export const STUDIO_PROMPT =
   'a gentle falloff to near-black at the corners, and a soft contact shadow beneath the bag. ' +
   'Clean, minimal, high-end coffee-roaster catalogue look. Vertical 4:5 framing. No props, no text overlays, no watermark.';
 
+/* Google has moved image generation from `models/{m}:generateContent` to the
+   Interactions API, and the response shape differs between them (and has
+   already changed once). Rather than hard-code a path through the JSON, walk
+   the whole response for the first node that looks like image bytes. */
+function findImageData(node, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 8) return null;
+  if (Array.isArray(node)) {
+    for (const v of node) {
+      const hit = findImageData(v, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const inline = node.inline_data || node.inlineData || node.output_image || node.outputImage;
+  if (inline && typeof inline.data === 'string') {
+    return { data: inline.data, mime: inline.mime_type || inline.mimeType || 'image/png' };
+  }
+  // Interactions-style: { type: "image", mime_type, data }
+  if (typeof node.data === 'string' && node.data.length > 512 &&
+      (node.type === 'image' || node.mime_type || node.mimeType)) {
+    return { data: node.data, mime: node.mime_type || node.mimeType || 'image/png' };
+  }
+  for (const v of Object.values(node)) {
+    const hit = findImageData(v, depth + 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function findText(node, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 8) return '';
+  if (Array.isArray(node)) return node.map(v => findText(v, depth + 1)).find(Boolean) || '';
+  if (typeof node.text === 'string' && node.text.trim()) return node.text;
+  for (const v of Object.values(node)) {
+    const hit = findText(v, depth + 1);
+    if (hit) return hit;
+  }
+  return '';
+}
+
 async function geminiRender(cfg, blob) {
-  const dataURL = await blobToDataURL(blob);
-  const b64 = dataURL.split(',')[1];
+  const b64 = (await blobToDataURL(blob)).split(',')[1];
+  const mime = blob.type || 'image/jpeg';
+  const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key };
+
+  /* 1. Interactions API — current path for the Nano Banana models. */
+  let firstError = '';
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: cfg.model,
+        input: [
+          { type: 'text', text: STUDIO_PROMPT },
+          { type: 'image', mime_type: mime, data: b64 },
+        ],
+      }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      const hit = findImageData(json);
+      if (hit) return dataURLToBlob(`data:${hit.mime};base64,${hit.data}`);
+      const txt = findText(json);
+      throw new Error(txt ? `Model replied with text, not an image: ${txt.slice(0, 140)}`
+                          : 'No image in the response');
+    }
+    firstError = json?.error?.message || `Gemini error ${res.status}`;
+    // 4xx that isn't "endpoint/model unknown" is a real failure — don't retry
+    if (res.status !== 404 && res.status !== 400) throw new Error(firstError);
+  } catch (err) {
+    if (firstError && err.message === firstError) throw err;
+    if (!firstError) firstError = err.message || 'Interactions request failed';
+    if (/text, not an image|No image in the response/.test(err.message || '')) throw err;
+  }
+
+  /* 2. Legacy generateContent — still works for gemini-2.5-flash-image. */
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+      headers,
       body: JSON.stringify({
         contents: [{
           parts: [
             { text: STUDIO_PROMPT },
-            { inline_data: { mime_type: blob.type || 'image/jpeg', data: b64 } },
+            { inline_data: { mime_type: mime, data: b64 } },
           ],
         }],
       }),
     }
   );
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error?.message || `Gemini error ${res.status}`);
-  const parts = json?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find(p => p.inline_data || p.inlineData);
-  if (!imgPart) {
-    const txt = parts.find(p => p.text)?.text;
-    throw new Error(txt ? `Model returned text, not an image: ${txt.slice(0, 120)}` : 'No image in response');
+  if (!res.ok) {
+    throw new Error(json?.error?.message || firstError || `Gemini error ${res.status}`);
   }
-  const inline = imgPart.inline_data || imgPart.inlineData;
-  return dataURLToBlob(`data:${inline.mime_type || inline.mimeType || 'image/png'};base64,${inline.data}`);
+  const hit = findImageData(json);
+  if (hit) return dataURLToBlob(`data:${hit.mime};base64,${hit.data}`);
+  const txt = findText(json);
+  throw new Error(txt ? `Model replied with text, not an image: ${txt.slice(0, 140)}`
+                      : 'No image in the response');
 }
 
 async function openaiRender(cfg, blob) {

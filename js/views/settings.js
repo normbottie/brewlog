@@ -59,7 +59,17 @@ export async function render(root) {
         </div>
         <div class="field">
           <label for="s-model">Model</label>
-          <input id="s-model" data-model placeholder="gemini-2.5-flash-image" value="${esc(img?.model || '')}">
+          <input id="s-model" data-model list="s-models"
+                 placeholder="${esc(PROVIDERS[img?.provider || 'gemini'].defaultModel)}"
+                 value="${esc(img?.model || '')}">
+          <datalist id="s-models">
+            ${(PROVIDERS[img?.provider || 'gemini'].models || []).map(m =>
+              `<option value="${esc(m)}"></option>`).join('')}
+          </datalist>
+          <div class="hint">Gemini image models, cheapest first:
+            <code>gemini-3.1-flash-lite-image</code> (~$0.03/image),
+            <code>gemini-3.1-flash-image</code> (~$0.05),
+            <code>gemini-3-pro-image</code> (~$0.13).</div>
         </div>
         <div class="field">
           <label for="s-imgkey">API key</label>
@@ -148,7 +158,10 @@ export async function render(root) {
     location.reload();
   });
   view.querySelector('[data-prov]').addEventListener('change', (e) => {
-    view.querySelector('[data-model]').value = PROVIDERS[e.target.value].defaultModel;
+    const p = PROVIDERS[e.target.value];
+    view.querySelector('[data-model]').value = p.defaultModel;
+    view.querySelector('#s-models').innerHTML =
+      (p.models || []).map(m => `<option value="${esc(m)}"></option>`).join('');
   });
 
   /* --- data --- */
