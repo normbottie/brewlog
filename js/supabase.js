@@ -64,9 +64,25 @@ async function headers(cfg, extra = {}) {
 
 async function jsonOrThrow(res) {
   if (!res.ok) {
-    let detail = '';
-    try { detail = (await res.json()).message || ''; } catch {}
-    throw new Error(`Supabase ${res.status}${detail ? ': ' + detail : ''}`);
+    let body = null;
+    try { body = await res.json(); } catch {}
+    const detail = body?.message || '';
+    /* PGRST205: the table isn't in PostgREST's schema cache — either it was
+       never created or the cache is still catching up. Say what to do
+       instead of surfacing the raw code. */
+    const missing = /Could not find the table '([^']+)'/.exec(detail);
+    if (body?.code === 'PGRST205' || missing) {
+      const table = (missing?.[1] || '').replace(/^public\./, '') || 'a table';
+      throw new Error(
+        `Your database is missing the \`${table}\` table — run the latest schema.sql ` +
+        `in the Supabase SQL editor (Settings → SQL Editor → New query). ` +
+        `If you just ran it, wait ~30 seconds and try again.`
+      );
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('Supabase rejected the request — check you are signed in.');
+    }
+    throw new Error(detail || `Supabase error ${res.status}`);
   }
   if (res.status === 204) return null;
   const text = await res.text();

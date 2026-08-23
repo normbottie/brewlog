@@ -203,6 +203,7 @@ export async function render(root) {
         : '✓ Saved. Your log is private.';
     } catch (err) {
       st.textContent = err.message || 'Could not save';
+      // leave the switch as the user set it so a retry keeps their intent
     } finally {
       btn.disabled = false;
       btn.textContent = 'Save profile';
