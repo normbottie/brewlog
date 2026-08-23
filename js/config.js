@@ -11,5 +11,5 @@
  */
 export const DEFAULT_SUPABASE = {
   url: 'https://uszcbsovcdzzfxqtzazb.supabase.co',
-  key: '',   // paste the anon / sb_publishable key here
+  key: 'sb_publishable_JHn6cJ4kGirP2eTWKaQRXg_Ft2FJpH4',
 };
