@@ -76,7 +76,11 @@ export function toast(msg, ms = 2400) {
 /** Bottom sheet. `render(close)` returns markup or a node. */
 export function sheet(title, render) {
   const backdrop = h(`<div class="sheet-backdrop"><div class="sheet">
-    <div class="grabber"></div>${title ? `<h3>${esc(title)}</h3>` : ''}
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      ${title ? `<h3>${esc(title)}</h3>` : '<span></span>'}
+      <button class="icon-btn sheet-close" data-close aria-label="Close">&times;</button>
+    </div>
     <div class="sheet-body"></div></div></div>`);
   const close = () => {
     backdrop.style.transition = 'opacity .2s';
@@ -88,6 +92,9 @@ export function sheet(title, render) {
   if (typeof content === 'string') body.innerHTML = content;
   else if (content) body.appendChild(content);
   backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('[data-close]').addEventListener('click', close);
+  const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(backdrop);
   return { el: backdrop, close };
 }

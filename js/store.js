@@ -135,6 +135,11 @@ export async function setBeanImage(beanId, blob, rawBlob) {
   if (bean) { bean._imgDirty = true; await save('beans', bean); }
 }
 
+/** The original camera photo, kept so the framing can be redone later. */
+export function beanRawBlob(beanId) {
+  return getBlob(rawKey(beanId));
+}
+
 /** Object URL for a bean's studio shot, pulling from Supabase if needed. */
 export async function beanImageURL(bean) {
   if (!bean) return null;

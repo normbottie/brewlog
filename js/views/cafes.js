@@ -26,7 +26,7 @@ export async function render(root) {
         </button>
         <button data-here style="flex:1;white-space:nowrap">This map area</button>
       </div>
-      <div class="hint" data-nearstatus style="margin-top:8px">Or tap the map to drop a pin, or use + to search an address.</div>
+      <div class="hint" data-nearstatus style="margin-top:8px">Or tap anywhere on the map to drop a pin — you can drag it to fine-tune, and close the sheet to cancel.</div>
       <div class="search-bar" style="margin-top:16px">
         ${icon('search')}
         <input type="search" placeholder="Search cafes and notes…" data-q>
@@ -133,8 +133,28 @@ export async function render(root) {
   });
   if (group.length > 1) map.fitBounds(group, { padding: [40, 40] });
 
+  /* Tapping the map drops a draggable pin you can nudge into place; the
+     details sheet opens alongside it, and the pin clears if you cancel. */
+  let draft = null;
   map.on('click', (e) => {
-    addCafeSheet({ lat: e.latlng.lat, lng: e.latlng.lng }, cafes, paint);
+    if (draft) map.removeLayer(draft);
+    draft = L.marker(e.latlng, { icon: pinIcon, draggable: true, autoPan: true }).addTo(map);
+    draft.bindTooltip('Drag me to adjust', { permanent: true, direction: 'top', offset: [0, -26] }).openTooltip();
+
+    let openSheetHandle = null;
+    const openSheet = () => {
+      openSheetHandle?.close();
+      const p = draft.getLatLng();
+      openSheetHandle = addCafeSheet({ lat: p.lat, lng: p.lng }, cafes, () => {
+        if (draft) { map.removeLayer(draft); draft = null; }
+        paint();
+      });
+    };
+
+    // moving the pin reopens the sheet with the new coordinates
+    draft.on('dragstart', () => openSheetHandle?.close());
+    draft.on('dragend', openSheet);
+    openSheet();
   });
 
   setTimeout(() => map.invalidateSize(), 120);
@@ -211,7 +231,7 @@ export function addCafeSheet(seed, cafes, onDone) {
   const cafe = { ...blankCafe(), ...(seed || {}) };
   let rating = 0;
 
-  sheet('Add a cafe', (close) => {
+  return sheet('Add a cafe', (close) => {
     const node = h(`<div>
       <div class="field">
         <label for="c-name">Name</label>

@@ -225,8 +225,23 @@ function bbox(alpha, w, h, thresh = 40) {
 /* ================= backdrops ================= */
 
 export const BACKDROPS = {
+  white: {
+    label: 'White',
+    prompt: 'a seamless pure-white studio sweep, brightly and evenly lit',
+    paint(ctx, w, h) {
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.62, '#F4F1EC');
+      g.addColorStop(1, '#DFD8CE');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    },
+    shadow: 'rgba(90,78,66,0.30)',
+    reflect: 0.08,
+  },
   espresso: {
     label: 'Espresso',
+    prompt: 'a seamless dark warm-brown studio backdrop falling off to near-black at the corners',
     paint(ctx, w, h) {
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, '#2A211B');
@@ -247,6 +262,7 @@ export const BACKDROPS = {
   },
   cream: {
     label: 'Cream',
+    prompt: 'a seamless warm cream-coloured studio backdrop',
     paint(ctx, w, h) {
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, '#EFE4D5');
@@ -266,6 +282,7 @@ export const BACKDROPS = {
   },
   slate: {
     label: 'Slate',
+    prompt: 'a seamless dark slate-grey studio backdrop',
     paint(ctx, w, h) {
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, '#28312F');
@@ -469,13 +486,19 @@ export const STUDIO_PROMPT = [
   'side print with different text, placeholder lettering, a logo or a pattern. The front',
   'face keeps all of its original artwork and text, unchanged.',
   '',
-  'LIGHTING AND BACKGROUND: seamless pure-white studio sweep. Soft, even, diffused light',
+  'LIGHTING AND BACKGROUND: place the bag on {{BACKDROP}}. Soft, even, diffused light',
   'from the upper left, gentle highlights along the bag edges, and a soft contact shadow',
   'directly beneath the bag. Crisp focus edge to edge.',
   '',
   'Vertical 4:5 framing. No props, no hands, no reflections of other objects, no text',
   'overlays, no watermark, no border.',
 ].join(' ');
+
+/** The studio prompt with the chosen backdrop substituted in. */
+export function studioPrompt(backdropKey = 'white') {
+  const bd = BACKDROPS[backdropKey] || BACKDROPS.white;
+  return STUDIO_PROMPT.replace('{{BACKDROP}}', bd.prompt || BACKDROPS.white.prompt);
+}
 
 export const READ_LABEL_PROMPT = [
   'Read this photograph of a coffee bag and transcribe what is printed on it.',
@@ -536,7 +559,7 @@ function findText(node, depth = 0) {
   return '';
 }
 
-async function geminiRender(cfg, blob) {
+async function geminiRender(cfg, blob, prompt) {
   const b64 = (await blobToDataURL(blob)).split(',')[1];
   const mime = blob.type || 'image/jpeg';
   const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key };
@@ -550,7 +573,7 @@ async function geminiRender(cfg, blob) {
       body: JSON.stringify({
         model: cfg.model,
         input: [
-          { type: 'text', text: STUDIO_PROMPT },
+          { type: 'text', text: prompt },
           { type: 'image', mime_type: mime, data: b64 },
         ],
       }),
@@ -581,7 +604,7 @@ async function geminiRender(cfg, blob) {
       body: JSON.stringify({
         contents: [{
           parts: [
-            { text: STUDIO_PROMPT },
+            { text: prompt },
             { inline_data: { mime_type: mime, data: b64 } },
           ],
         }],
@@ -599,11 +622,11 @@ async function geminiRender(cfg, blob) {
                       : 'No image in the response');
 }
 
-async function openaiRender(cfg, blob) {
+async function openaiRender(cfg, blob, prompt) {
   const fd = new FormData();
   fd.append('model', cfg.model);
   fd.append('image', blob, 'bag.jpg');
-  fd.append('prompt', STUDIO_PROMPT);
+  fd.append('prompt', prompt);
   fd.append('size', '1024x1536');
   const res = await fetch('https://api.openai.com/v1/images/edits', {
     method: 'POST',
@@ -814,17 +837,18 @@ export async function readBagLabel(img) {
 }
 
 /** Render via the configured API, then normalise to OUT_W x OUT_H. */
-export async function apiStudio(img, rawBlob) {
+export async function apiStudio(img, opts = {}) {
   const cfg = getImageAPIConfig();
   if (!cfg) throw new Error('No image API key configured');
+  const prompt = studioPrompt(opts.backdrop || 'white');
 
   // send a reasonably sized copy, not the full 12MP phone photo
   const small = fit(img, 1024);
   const send = await canvasToBlob(small, 'image/jpeg', 0.88);
 
   const result = cfg.provider === 'openai'
-    ? await openaiRender(cfg, send)
-    : await geminiRender(cfg, send);
+    ? await openaiRender(cfg, send, prompt)
+    : await geminiRender(cfg, send, prompt);
 
   const rendered = await fileToImage(result);
   const out = document.createElement('canvas');
@@ -835,6 +859,5 @@ export async function apiStudio(img, rawBlob) {
   const s = Math.max(OUT_W / rendered.width, OUT_H / rendered.height);
   const dw = rendered.width * s, dh = rendered.height * s;
   ctx.drawImage(rendered, (OUT_W - dw) / 2, (OUT_H - dh) / 2, dw, dh);
-  void rawBlob;
   return canvasToBlob(out, 'image/jpeg', 0.92);
 }

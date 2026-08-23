@@ -1,13 +1,13 @@
 /* Add / edit a bean: photograph the bag, rate it, save. */
 
 import {
-  getBean, saveBean, blankBean, setBeanImage, beanImageURL,
+  getBean, saveBean, blankBean, setBeanImage, beanImageURL, beanRawBlob,
   AXES, AXIS_LABELS, BREW_METHODS, ROAST_LEVELS, PROCESSES,
 } from '../store.js';
 import { h, esc, icon, stars, bindStars, toast, bindRange } from '../ui.js';
 import { radarSVG } from '../radar.js';
 import {
-  fileToImage, localStudio, plainFrame, apiStudio, readBagLabel,
+  fileToImage, plainFrame, apiStudio, readBagLabel,
   BACKDROPS, hasImageAPI,
 } from '../imaging.js';
 
@@ -21,8 +21,8 @@ export async function render(root, id) {
   let rawImg = null;      // HTMLImageElement of the original photo
   let rawBlob = null;
   let chosen = null;      // Blob to save
-  const variants = {};    // { cutout, plain, ai } -> { blob, url }
-  let backdrop = 'espresso';
+  const variants = {};    // { plain, ai } -> { blob, url }
+  let backdrop = 'white';
   let selected = null;
 
   const view = h(`<div>
@@ -51,7 +51,7 @@ export async function render(root, id) {
           <label style="display:block;font-size:12.5px;letter-spacing:.085em;text-transform:uppercase;color:var(--text-faint);font-weight:600;margin-bottom:7px">Backdrop</label>
           <div class="seg" data-backdrops>
             ${Object.entries(BACKDROPS).map(([k, v]) =>
-              `<button type="button" data-bd="${k}" aria-pressed="${k === 'espresso'}">${esc(v.label)}</button>`).join('')}
+              `<button type="button" data-bd="${k}" aria-pressed="${k === 'white'}">${esc(v.label)}</button>`).join('')}
           </div>
         </div>
         <div data-imgstatus class="hint" style="margin-top:10px"></div>
@@ -205,15 +205,12 @@ export async function render(root, id) {
     try {
       variants.plain = { blob: await plainFrame(rawImg, backdrop) };
       variants.plain.url = URL.createObjectURL(variants.plain.blob);
-      if (!selected) select('plain');
-      paintVariants();
-
-      variants.cutout = { blob: await localStudio(rawImg, { backdrop }) };
-      variants.cutout.url = URL.createObjectURL(variants.cutout.blob);
+      if (!selected || selected === 'plain') select('plain');
+      else paintVariants();
       paintVariants();
       status.textContent = hasImageAPI()
-        ? 'Tap “AI studio” for a three-quarter product shot on white.'
-        : 'Add an image API key in Settings for a proper studio render.';
+        ? 'Pick a background, then tap “AI studio” to re-render on it.'
+        : 'Add an image API key in Settings for a studio render.';
     } catch (err) {
       status.textContent = 'Could not process that photo. ' + (err.message || '');
       paintVariants();
@@ -221,10 +218,9 @@ export async function render(root, id) {
   }
 
   function paintVariants() {
-    const opts = [
-      { k: 'plain', label: 'Photo' },
-      { k: 'cutout', label: 'Cutout' },
-    ];
+    const opts = [];
+    if (variants.saved) opts.push({ k: 'saved', label: 'Current' });
+    opts.push({ k: 'plain', label: 'Photo' });
     if (hasImageAPI()) opts.push({ k: 'ai', label: 'AI studio' });
 
     varRow.innerHTML = opts.map(o => {
@@ -249,17 +245,22 @@ export async function render(root, id) {
 
   function select(k) {
     selected = k;
-    chosen = variants[k]?.blob || null;
+    chosen = variants[k]?.blob || null;   // null for 'saved' = leave the image as it is
     if (variants[k]) showPreview(variants[k].url);
     varRow.querySelectorAll('[data-v]').forEach(x =>
       x.setAttribute('aria-pressed', String(x.dataset.v === selected)));
   }
 
   async function runAI() {
-    status.innerHTML = `<span class="busy"><span class="spinner"></span>Rendering with the image model — this takes 10–30s…</span>`;
+    if (!rawImg) {
+      status.textContent = 'The original photo is not on this device — retake it to re-render.';
+      return;
+    }
+    status.innerHTML = `<span class="busy"><span class="spinner"></span>Rendering on ${esc(BACKDROPS[backdrop].label.toLowerCase())} — this takes 10–30s…</span>`;
     try {
-      const blob = await apiStudio(rawImg, rawBlob);
+      const blob = await apiStudio(rawImg, { backdrop });
       variants.ai = { blob, url: URL.createObjectURL(blob) };
+      variants.ai.backdrop = backdrop;
       select('ai');
       paintVariants();
       status.textContent = 'Studio render ready.';
@@ -338,15 +339,24 @@ export async function render(root, id) {
 
   view.querySelector('[data-backdrops]').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-bd]');
-    if (!b || !rawImg) return;
+    if (!b) return;
     backdrop = b.dataset.bd;
     view.querySelectorAll('[data-bd]').forEach(x =>
       x.setAttribute('aria-pressed', String(x.dataset.bd === backdrop)));
-    const keepAI = variants.ai;
-    Object.keys(variants).forEach(k => { if (k !== 'ai') delete variants[k]; });
-    if (selected !== 'ai') selected = null;
+
+    if (!rawImg) {
+      status.textContent = 'Retake the photo to apply a new background.';
+      return;
+    }
+
+    // the local framing is free, so redo it straight away
+    if (variants.plain) { URL.revokeObjectURL(variants.plain.url); delete variants.plain; }
     await buildVariants();
-    if (keepAI) { variants.ai = keepAI; paintVariants(); }
+
+    // an AI render costs money, so ask rather than spending it automatically
+    if (variants.ai && variants.ai.backdrop !== backdrop) {
+      status.textContent = `Tap “AI studio” to re-render on ${BACKDROPS[backdrop].label.toLowerCase()}.`;
+    }
   });
 
   /* ---------- form wiring ---------- */
@@ -409,15 +419,36 @@ export async function render(root, id) {
 
   root.appendChild(view);
 
-  /* existing photo when editing */
+  /* Editing: show the saved image, and restore the original camera photo so
+     the background can be changed or the render redone without re-shooting. */
   if (!isNew) {
-    const url = await beanImageURL(bean);
-    if (url) { showPreview(url); tools.hidden = false; paintVariants(); status.textContent = 'Tap the frame to replace this photo.'; }
+    const savedURL = await beanImageURL(bean);
+    if (savedURL) {
+      showPreview(savedURL);
+      tools.hidden = false;
+      variants.saved = { blob: null, url: savedURL };
+      selected = 'saved';
+      paintVariants();
+    }
+    const storedRaw = await beanRawBlob(bean.id);
+    if (storedRaw) {
+      try {
+        rawBlob = storedRaw;
+        rawImg = await fileToImage(storedRaw);
+        status.textContent = 'Pick a background, or tap the frame to replace the photo.';
+      } catch { /* corrupt blob — fall through */ }
+    } else if (savedURL) {
+      status.textContent = 'Only the finished image is saved for this bag — retake the photo to change the background.';
+    }
   }
 
   return {
     destroy() {
-      Object.values(variants).forEach(v => v?.url && URL.revokeObjectURL(v.url));
+      // 'saved' borrows the store's cached object URL — revoking it would
+      // break the image everywhere else in the app.
+      Object.entries(variants).forEach(([k, v]) => {
+        if (k !== 'saved' && v?.url) URL.revokeObjectURL(v.url);
+      });
     },
   };
 }

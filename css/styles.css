@@ -508,6 +508,9 @@ input[type=range]::-moz-range-thumb {
 .thumb-row { display: flex; gap: 10px; }
 .thumb-opt {
   flex: 1;
+  min-width: 0;
+  display: block;          /* the base button rule is inline-flex, which put
+                              the caption beside the thumbnail instead of under it */
   border-radius: var(--radius-md);
   overflow: hidden;
   padding: 0;
@@ -665,6 +668,21 @@ input[type=range]::-moz-range-thumb {
   width: 38px; height: 4.5px; border-radius: 3px;
   background: rgba(255,240,220,.24);
   margin: 4px auto 16px;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sheet-head h3 { margin: 0; flex: 1; font-size: 20px; letter-spacing: -.018em; }
+.sheet-head > span { flex: 1; }
+.sheet-close {
+  font-size: 26px;
+  line-height: 1;
+  padding-bottom: 3px;
+  color: var(--text-muted);
+  flex: 0 0 auto;
 }
 .sheet h3 { margin: 0 0 16px; font-size: 20px; letter-spacing: -.018em; }
 
