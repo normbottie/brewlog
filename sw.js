@@ -30,6 +30,7 @@ const SHELL_FILES = [
   './js/views/cafes.js',
   './js/views/cafe-detail.js',
   './js/views/settings.js',
+  './js/views/lock.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-180.png',

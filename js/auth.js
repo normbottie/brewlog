@@ -79,6 +79,35 @@ export async function signIn(email) {
   return clean;
 }
 
+/** Sign in with the 6-digit code from the sign-in email.
+ *  The magic link and the code come from the same email; the template must
+ *  include {{ .Token }} for the code to appear. */
+export async function verifyCode(email, code) {
+  const clean = String(email || '').trim();
+  const token = String(code || '').replace(/\D/g, '');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('Enter the email the code was sent to');
+  if (token.length !== 6) throw new Error('The code is 6 digits');
+  let payload;
+  try {
+    payload = await authFetch('verify', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'email', email: clean, token }),
+    });
+  } catch (first) {
+    // older projects verify magic-link OTPs under the legacy type
+    try {
+      payload = await authFetch('verify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'magiclink', email: clean, token }),
+      });
+    } catch { throw first; }
+  }
+  const next = shape(payload);
+  next.user = payload.user || await fetchUser(next.access_token);
+  store(next);
+  return next;
+}
+
 export async function signOut() {
   const token = session?.access_token;
   store(null);

@@ -12,7 +12,7 @@ export async function render(root) {
   const view = h(`<div>
     <div class="topbar">
       <div>
-        <h1>Cafes</h1>
+        <h1>Cafés</h1>
         <div class="sub">${cafes.length} place${cafes.length === 1 ? '' : 's'} rated</div>
       </div>
       <div class="spacer"></div>
@@ -29,7 +29,7 @@ export async function render(root) {
       <div class="hint" data-nearstatus style="margin-top:8px">Or tap anywhere on the map to drop a pin — you can drag it to fine-tune, and close the sheet to cancel.</div>
       <div class="search-bar" style="margin-top:16px">
         ${icon('search')}
-        <input type="search" placeholder="Search cafes and notes…" data-q>
+        <input type="search" placeholder="Search cafés and notes…" data-q>
       </div>
       <div data-list></div>
     </div>
@@ -43,7 +43,7 @@ export async function render(root) {
     const rows = cafes.filter(c => !q ||
       [c.name, c.address, c.notes].join(' ').toLowerCase().includes(q));
     if (!cafes.length) {
-      listEl.innerHTML = empty('map', 'No cafes yet',
+      listEl.innerHTML = empty('map', 'No cafés yet',
         'Add the places you drink at, rate them, and keep notes on what to order.');
       return;
     }
@@ -81,7 +81,7 @@ export async function render(root) {
       const where = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
       if (!results.length) {
         nearStatus.innerHTML =
-          `No cafes are mapped within 5&nbsp;miles of ${esc(where)}. That is OpenStreetMap's ` +
+          `No cafés are mapped within 5&nbsp;miles of ${esc(where)}. That is OpenStreetMap's ` +
           `coverage, not an error — tap the map to add one yourself.`;
         return;
       }
@@ -89,7 +89,7 @@ export async function render(root) {
         `${results.length} found within ${formatDistance(radius)} of ${where}.`;
       showNearbySheet(results, point, cafes, paint);
     } catch (err) {
-      nearStatus.textContent = err.message || 'Could not search for cafes';
+      nearStatus.textContent = err.message || 'Could not search for cafés';
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;
@@ -185,7 +185,7 @@ function whenLeaflet() {
 function showNearbySheet(found, here, cafes, onDone) {
   if (!found.length) return;
 
-  sheet(`${found.length} cafe${found.length === 1 ? '' : 's'} nearby`, (close) => {
+  sheet(`${found.length} café${found.length === 1 ? '' : 's'} nearby`, (close) => {
     const already = (c) =>
       cafes.find(x => Number.isFinite(x.lat) &&
         distanceMeters({ lat: x.lat, lng: x.lng }, { lat: c.lat, lng: c.lng }) < 60);
@@ -232,7 +232,7 @@ export function addCafeSheet(seed, cafes, onDone) {
   const cafe = { ...blankCafe(), ...(seed || {}) };
   let rating = 0;
 
-  return sheet('Add a cafe', (close) => {
+  return sheet('Add a café', (close) => {
     const node = h(`<div>
       <div class="field">
         <label for="c-name">Name</label>
@@ -295,11 +295,11 @@ export function addCafeSheet(seed, cafes, onDone) {
       cafe.address = node.querySelector('[data-a]').value.trim();
       cafe.notes = node.querySelector('[data-notes]').value;
       cafe.rating = rating;
-      if (!cafe.name) { toast('Give the cafe a name'); return; }
+      if (!cafe.name) { toast('Give the café a name'); return; }
       await saveCafe(cafe);
       cafes.unshift(cafe);
       close();
-      toast('Cafe saved');
+      toast('Café saved');
       onDone && onDone();
       if (location.hash.startsWith('#/cafes')) {
         document.dispatchEvent(new CustomEvent('brewlog:data'));

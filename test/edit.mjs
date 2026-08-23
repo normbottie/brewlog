@@ -9,6 +9,15 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const ctx = await browser.newContext({ viewport: { width: 414, height: 896 }, deviceScaleFactor: 2 });
 const page = await ctx.newPage();
 const errs = [];
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('brewlog.auth.session', JSON.stringify({
+        access_token: 'test-token', refresh_token: 'r',
+        expires_at: Date.now() + 86400000,
+        user: { id: '00000000-0000-4000-8000-000000000000', email: 'test@example.com' },
+      }));
+    } catch {}
+  });
 page.on('pageerror', e => errs.push('pageerror: ' + e.message));
 
 await page.goto(base + '#/settings', { waitUntil: 'networkidle' });

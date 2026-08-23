@@ -15,6 +15,15 @@ const ctx = await browser.newContext({
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
   permissions: [],
 });
+  await ctx.addInitScript(() => {
+    try {
+      localStorage.setItem('brewlog.auth.session', JSON.stringify({
+        access_token: 'test-token', refresh_token: 'r',
+        expires_at: Date.now() + 86400000,
+        user: { id: '00000000-0000-4000-8000-000000000000', email: 'test@example.com' },
+      }));
+    } catch {}
+  });
 const page = await ctx.newPage();
 
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });

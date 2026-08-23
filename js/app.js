@@ -2,7 +2,7 @@
 
 import { icon, toast } from './ui.js';
 import { queueSync, onSyncChange, syncState } from './store.js';
-import { captureSession } from './auth.js';
+import { captureSession, isSignedIn, onAuthChange } from './auth.js';
 
 import * as Beans from './views/beans.js';
 import * as BeanDetail from './views/bean-detail.js';
@@ -10,13 +10,14 @@ import * as BeanEdit from './views/bean-edit.js';
 import * as Cafes from './views/cafes.js';
 import * as CafeDetail from './views/cafe-detail.js';
 import * as Settings from './views/settings.js';
+import * as Lock from './views/lock.js';
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
 
 const TABS = [
   { id: 'beans', label: 'Beans', route: '#/beans', icon: 'bean' },
-  { id: 'cafes', label: 'Cafes', route: '#/cafes', icon: 'map' },
+  { id: 'cafes', label: 'Cafés', route: '#/cafes', icon: 'map' },
   { id: 'settings', label: 'Settings', route: '#/settings', icon: 'gear' },
 ];
 
@@ -64,6 +65,18 @@ async function route() {
     }
   }
 
+  /* The app requires an account: everything is gated behind sign-in. */
+  if (!isSignedIn()) {
+    if (current && current.destroy) { try { current.destroy(); } catch {} }
+    current = null;
+    tabbar.hidden = true;
+    app.innerHTML = '';
+    window.scrollTo(0, 0);
+    Lock.render(app);
+    return;
+  }
+  tabbar.hidden = false;
+
   const hash = location.hash || '#/beans';
   let match = null;
   for (const [re, fn] of ROUTES) {
@@ -90,6 +103,12 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+// signing in or out swaps between the gate and the app
+let authRouteTimer = null;
+onAuthChange(() => {
+  clearTimeout(authRouteTimer);
+  authRouteTimer = setTimeout(() => { route(); queueSync(600); }, 60);
+});
 document.addEventListener('brewlog:navigate', e => { location.hash = e.detail; });
 document.addEventListener('brewlog:data', () => {
   // re-render list views when a sync brings in new rows

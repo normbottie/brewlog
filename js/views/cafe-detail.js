@@ -7,7 +7,7 @@ export async function render(root, id) {
   const cafe = await getCafe(id);
   if (!cafe || cafe.deleted) {
     root.innerHTML = `<div class="view"><div class="empty glass card-pad">
-      <h3>Cafe not found</h3><p>It may have been deleted.</p></div></div>`;
+      <h3>Café not found</h3><p>It may have been deleted.</p></div></div>`;
     return;
   }
 
@@ -68,7 +68,7 @@ export async function render(root, id) {
     history.length > 1 ? history.back() : (location.hash = '#/cafes');
 
   view.querySelector('[data-del]').onclick = async () => {
-    if (await confirmSheet('Delete this cafe?', `“${cafe.name || 'Untitled'}” will be removed.`)) {
+    if (await confirmSheet('Delete this café?', `“${cafe.name || 'Untitled'}” will be removed.`)) {
       await removeCafe(cafe.id);
       toast('Deleted');
       location.hash = '#/cafes';

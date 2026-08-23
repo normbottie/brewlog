@@ -126,7 +126,7 @@ export async function render(root) {
         <div style="display:flex;gap:18px;margin-bottom:16px">
           <div><div class="k" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);font-weight:620">Beans</div>
             <div style="font-size:26px;font-weight:660">${beans.length}</div></div>
-          <div><div class="k" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);font-weight:620">Cafes</div>
+          <div><div class="k" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);font-weight:620">Cafés</div>
             <div style="font-size:26px;font-weight:660">${cafes.length}</div></div>
           <div style="flex:1"><div class="k" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);font-weight:620">Storage</div>
             <div style="font-size:26px;font-weight:660" data-usage>—</div></div>
