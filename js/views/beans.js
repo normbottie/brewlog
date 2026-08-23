@@ -1,13 +1,18 @@
 /* Beans list — search, filter, grid of uniform bag shots. */
 
-import { listBeans, beanImageURL, syncState } from '../store.js';
-import { h, esc, icon, stars, empty } from '../ui.js';
+import { listBeans, beanImageURL, syncState, membersById, sharingMembers, isForeign } from '../store.js';
+import { h, esc, icon, stars, empty, ownerBadge, memberColor } from '../ui.js';
 import { radarMini } from '../radar.js';
 
-const state = { q: '', filter: 'all' };
+const state = { q: '', filter: 'all', shared: false };
+const LS_SHARED = 'brewlog.scope.beans';
+try { state.shared = localStorage.getItem(LS_SHARED) === '1'; } catch {}
 
 export async function render(root) {
-  const beans = await listBeans();
+  const others = sharingMembers();
+  if (!others.length) state.shared = false;
+  const beans = await listBeans({ shared: state.shared });
+  const members = membersById();
 
   const roasters = [...new Set(beans.map(b => b.roaster).filter(Boolean))].sort();
   const brews = [...new Set(beans.map(b => b.brew_method).filter(Boolean))].sort();
@@ -28,6 +33,10 @@ export async function render(root) {
         ${icon('search')}
         <input type="search" placeholder="Search beans, roasters, notes…" value="${esc(state.q)}" data-q>
       </div>
+      ${others.length ? `<div class="scope-toggle" data-scope>
+        <button data-sc="mine" aria-pressed="${!state.shared}">Mine</button>
+        <button data-sc="all" aria-pressed="${state.shared}">Everyone</button>
+      </div>` : ''}
       <div class="filter-scroll" data-filters></div>
       <div data-results></div>
       <button class="btn-primary btn-block" data-new2 style="margin-top:18px">
@@ -57,6 +66,14 @@ export async function render(root) {
 
   const qEl = view.querySelector('[data-q]');
   qEl.addEventListener('input', () => { state.q = qEl.value; paint(); });
+
+  view.querySelector('[data-scope]')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sc]');
+    if (!b) return;
+    state.shared = b.dataset.sc === 'all';
+    try { localStorage.setItem(LS_SHARED, state.shared ? '1' : '0'); } catch {}
+    document.dispatchEvent(new CustomEvent('brewlog:data'));
+  });
 
   const results = view.querySelector('[data-results]');
 
@@ -98,12 +115,17 @@ export async function render(root) {
   }
 
   function card(b) {
-    return `<button class="glass bean-card" data-go="#/bean/${esc(b.id)}">
+    const foreign = isForeign(b);
+    const owner = foreign ? members.get(b.user_id) : null;
+    return `<button class="glass bean-card ${foreign ? 'shared' : ''}"
+        ${foreign ? `style="--owner:${memberColor(owner?._slot ?? -1)}"` : ''}
+        data-go="#/bean/${esc(b.id)}">
       <img class="shot" data-img="${esc(b.id)}" alt="${esc(b.name || 'Coffee bag')}"
            src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
       <div class="meta">
         <div class="name">${esc(b.name || 'Untitled')}</div>
         <div class="roaster">${esc(b.roaster || '—')}</div>
+        ${foreign ? `<div style="margin-top:5px">${ownerBadge(owner)}</div>` : ''}
         <div class="row">
           ${radarMini(b.ratings)}
           <div style="flex:1;min-width:0">

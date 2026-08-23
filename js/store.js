@@ -84,21 +84,24 @@ export function blankCafe() {
 
 /* ---- read ---------------------------------------------------------- */
 
-async function allLive(store) {
+async function allLive(store, { shared = false } = {}) {
   const rows = await idb.all(store);
+  const me = userId();
   return rows
     .filter(r => !r.deleted)
+    .filter(r => (shared ? true : (!r.user_id || r.user_id === me)))
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 }
 
-export const listBeans = () => allLive('beans');
-export const listCafes = () => allLive('cafes');
+export const listBeans = (opts) => allLive('beans', opts);
+export const listCafes = (opts) => allLive('cafes', opts);
 export const getBean = (id) => idb.get('beans', id);
 export const getCafe = (id) => idb.get('cafes', id);
 
 /* ---- write --------------------------------------------------------- */
 
 async function save(store, rec) {
+  if (isForeign(rec)) throw new Error('This entry belongs to another member');
   rec.updated_at = now();
   rec._dirty = true;
   await idb.put(store, rec);
@@ -160,6 +163,68 @@ export async function beanImageURL(bean) {
   const url = URL.createObjectURL(blob);
   urlCache.set(bean.id, url);
   return url;
+}
+
+/* ---- members & sharing --------------------------------------------- */
+
+/* Rows owned by someone else arrive through sync when that member has opted
+   into sharing. They are marked _foreign: never pushed, never editable. */
+export const isForeign = (rec) => !!rec && rec.user_id && rec.user_id !== userId();
+
+let profileCache = [];   // [{ user_id, display_name, share_log, _slot }]
+
+export function membersById() {
+  const m = new Map();
+  profileCache.forEach(p => m.set(p.user_id, p));
+  return m;
+}
+
+export function sharingMembers() {
+  return profileCache.filter(p => p.share_log && p.user_id !== userId());
+}
+
+export function myProfile() {
+  return profileCache.find(p => p.user_id === userId()) || null;
+}
+
+/** Colour slots are assigned by a stable order so a member keeps their hue. */
+function assignSlots(rows) {
+  const others = rows
+    .filter(p => p.user_id !== userId())
+    .sort((a, b) => String(a.created_at || a.user_id).localeCompare(String(b.created_at || b.user_id)));
+  others.forEach((p, i) => { p._slot = i; });
+  rows.filter(p => p.user_id === userId()).forEach(p => { p._slot = -1; });
+  return rows;
+}
+
+async function pullProfiles() {
+  try {
+    const rows = await sb.selectSince('profiles', null);
+    profileCache = assignSlots(rows || []);
+    await metaSet('profiles', profileCache);
+  } catch { /* table may predate this feature */ }
+}
+
+export async function loadCachedProfiles() {
+  const cached = await metaGet('profiles', null);
+  if (cached) profileCache = cached;
+  return profileCache;
+}
+
+/** Update my own profile row (display name / sharing opt-in). */
+export async function saveMyProfile({ display_name, share_log }) {
+  const me = userId();   // don't shadow the exported uid() generator
+  if (!me) throw new Error('Sign in first');
+  const row = {
+    user_id: me,
+    ...(display_name !== undefined ? { display_name } : {}),
+    ...(share_log !== undefined ? { share_log } : {}),
+    updated_at: now(),
+  };
+  await sb.upsert('profiles', [row]);
+  await pullProfiles();
+  document.dispatchEvent(new CustomEvent('brewlog:data'));
+  return row;
 }
 
 /* ---- sync ---------------------------------------------------------- */
@@ -240,7 +305,7 @@ export async function sync() {
     for (const table of ['beans', 'cafes']) {
       /* --- push --- */
       const local = await idb.all(table);
-      const dirty = local.filter(r => r._dirty);
+      const dirty = local.filter(r => r._dirty && !isForeign(r));
 
       if (table === 'beans') {
         for (const b of dirty.filter(r => r._imgDirty)) {
@@ -274,6 +339,7 @@ export async function sync() {
         if (watermark) await metaSet(`sync:${table}`, watermark);
       }
     }
+    await pullProfiles();
     await syncSettings(owner);
     setState('on', 'Synced');
     document.dispatchEvent(new CustomEvent('brewlog:data'));

@@ -1,7 +1,7 @@
 /* Router + shell. */
 
 import { icon, toast } from './ui.js';
-import { queueSync, onSyncChange, syncState } from './store.js';
+import { queueSync, onSyncChange, syncState, loadCachedProfiles } from './store.js';
 import { captureSession, isSignedIn, onAuthChange } from './auth.js';
 
 import * as Beans from './views/beans.js';
@@ -212,10 +212,15 @@ if ('serviceWorker' in navigator) {
 
 /* A magic-link redirect lands with the session in the URL fragment, which is
    also where the router looks — so consume it before routing. */
-captureSession()
-  .then(ok => { if (ok) toast('Signed in'); })
-  .catch(err => { toast(err.message || 'Sign-in failed', 6000); })
-  .finally(() => {
-    route();
-    queueSync(1200);
-  });
+/* The member list decides whether the Everyone toggle exists at all, so it
+   has to be warm before the first render — otherwise the views conclude
+   nobody is sharing and silently fall back to Mine. */
+Promise.all([
+  loadCachedProfiles().catch(() => {}),
+  captureSession()
+    .then(ok => { if (ok) toast('Signed in'); })
+    .catch(err => { toast(err.message || 'Sign-in failed', 6000); }),
+]).finally(() => {
+  route();
+  queueSync(1200);
+});

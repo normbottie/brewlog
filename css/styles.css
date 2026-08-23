@@ -381,6 +381,91 @@ select {
 }
 .chip-muted { background: rgba(255,255,255,.05); border-color: var(--glass-brd); color: var(--text-muted); }
 
+/* ---- shared-entry ownership ---- */
+.owner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.owner-dot {
+  width: 18px; height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,.35);
+}
+.owner-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* a shared card wears its owner's colour as a top rule */
+.bean-card.shared, .cafe-row.shared { position: relative; }
+.bean-card.shared::after, .cafe-row.shared::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 3px;
+  background: var(--owner, var(--text-faint));
+  z-index: 2;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+.share-row input { position: absolute; opacity: 0; width: 0; height: 0; }
+.share-row .switch {
+  flex: 0 0 auto;
+  width: 50px; height: 30px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.09);
+  border: 1px solid var(--glass-brd);
+  position: relative;
+  transition: background .22s var(--ease), border-color .22s;
+}
+.share-row .switch::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform .22s var(--ease), background .22s;
+}
+.share-row input:checked + .switch {
+  background: linear-gradient(163deg, var(--tan-bright), var(--tan));
+  border-color: rgba(255,240,220,.4);
+}
+.share-row input:checked + .switch::after { transform: translateX(20px); background: #1B1410; }
+.share-row input:focus-visible + .switch { box-shadow: 0 0 0 3px rgba(201,168,124,.3); }
+
+.scope-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+.scope-toggle button { flex: 1; padding: 9px 12px; font-size: 14px; border-radius: 12px; color: var(--text-muted); }
+.scope-toggle button[aria-pressed="true"] {
+  background: linear-gradient(163deg, rgba(228,199,154,.28), rgba(201,168,124,.15));
+  border-color: rgba(228,199,154,.5); color: var(--tan-bright); font-weight: 620;
+}
+.read-only-note {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13px; color: var(--text-muted);
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--glass-brd);
+  border-radius: var(--radius-sm);
+  padding: 10px 13px;
+}
+
 /* ============================================================
    Stars
    ============================================================ */

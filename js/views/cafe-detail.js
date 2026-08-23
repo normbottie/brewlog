@@ -1,7 +1,7 @@
 /* One cafe — edit in place. */
 
-import { getCafe, saveCafe, removeCafe } from '../store.js';
-import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate } from '../ui.js';
+import { getCafe, saveCafe, removeCafe, isForeign, membersById } from '../store.js';
+import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge } from '../ui.js';
 
 export async function render(root, id) {
   const cafe = await getCafe(id);
@@ -12,12 +12,14 @@ export async function render(root, id) {
   }
 
   const hasPin = Number.isFinite(cafe.lat) && Number.isFinite(cafe.lng);
+  const foreign = isForeign(cafe);
+  const owner = foreign ? membersById().get(cafe.user_id) : null;
 
   const view = h(`<div>
     <div class="topbar">
       <button class="icon-btn" data-back aria-label="Back">${icon('back')}</button>
       <div class="spacer"></div>
-      <button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>
+      ${foreign ? '' : `<button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>`}
     </div>
     <div class="view">
       <div class="glass card-pad" style="text-align:center">
@@ -28,8 +30,10 @@ export async function render(root, id) {
         </div>
         <h2 style="margin:0;font-size:23px;letter-spacing:-.02em">${esc(cafe.name || 'Untitled')}</h2>
         <div class="hint" style="margin-top:5px">${esc(cafe.address || 'No address')}</div>
-        <div style="margin-top:14px" data-stars>${stars(cafe.rating, { size: 'lg', interactive: true })}</div>
-        <div class="hint" style="margin-top:6px">Tap to change the rating</div>
+        <div style="margin-top:14px" data-stars>${stars(cafe.rating, { size: 'lg', interactive: !foreign })}</div>
+        <div class="hint" style="margin-top:6px">${foreign ? '' : 'Tap to change the rating'}</div>
+        ${foreign ? `<div class="read-only-note" style="margin-top:14px;justify-content:center">
+          ${ownerBadge(owner)} <span>Shared entry — read only</span></div>` : ''}
       </div>
 
       ${hasPin ? `<div id="map" style="margin-top:16px;height:240px"></div>
@@ -42,46 +46,48 @@ export async function render(root, id) {
 
       <h2 class="section">Notes</h2>
       <div class="glass card-pad">
-        <textarea data-notes placeholder="What to order, seating, wifi…">${esc(cafe.notes)}</textarea>
+        <textarea data-notes ${foreign ? 'readonly' : ''} placeholder="What to order, seating, wifi…">${esc(cafe.notes)}</textarea>
         <div class="field-row" style="margin-top:12px">
           <div class="field" style="margin:0">
             <label for="c-visit">Last visited</label>
-            <input id="c-visit" type="date" data-visit value="${esc(cafe.visited_on || '')}">
+            <input id="c-visit" type="date" data-visit ${foreign ? 'disabled' : ''} value="${esc(cafe.visited_on || '')}">
           </div>
         </div>
       </div>
 
       <div style="height:18px"></div>
-      <button class="btn-primary btn-block" data-save>Save changes</button>
+      ${foreign ? '' : '<button class="btn-primary btn-block" data-save>Save changes</button>'}
       <div class="hint" style="text-align:center;margin-top:12px">Added ${fmtDate(cafe.created_at)}</div>
     </div>
   </div>`);
 
   let rating = cafe.rating;
   const starBox = view.querySelector('[data-stars]');
-  bindStars(starBox, v => {
-    rating = rating === v ? 0 : v;
-    starBox.innerHTML = stars(rating, { size: 'lg', interactive: true });
-  });
+  if (!foreign) {
+    bindStars(starBox, v => {
+      rating = rating === v ? 0 : v;
+      starBox.innerHTML = stars(rating, { size: 'lg', interactive: true });
+    });
+  }
 
   view.querySelector('[data-back]').onclick = () =>
     history.length > 1 ? history.back() : (location.hash = '#/cafes');
 
-  view.querySelector('[data-del]').onclick = async () => {
+  view.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (await confirmSheet('Delete this café?', `“${cafe.name || 'Untitled'}” will be removed.`)) {
       await removeCafe(cafe.id);
       toast('Deleted');
       location.hash = '#/cafes';
     }
-  };
+  });
 
-  view.querySelector('[data-save]').onclick = async () => {
+  view.querySelector('[data-save]')?.addEventListener('click', async () => {
     cafe.rating = rating;
     cafe.notes = view.querySelector('[data-notes]').value;
     cafe.visited_on = view.querySelector('[data-visit]').value;
     await saveCafe(cafe);
     toast('Saved');
-  };
+  });
 
   root.appendChild(view);
 

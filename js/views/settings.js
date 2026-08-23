@@ -1,11 +1,12 @@
 /* Settings — sync, image rendering, backup. */
 
 import * as sb from '../supabase.js';
-import { exportJSON, importJSON, sync, syncState, listBeans, listCafes, markSettingsDirty } from '../store.js';
+import { exportJSON, importJSON, sync, syncState, listBeans, listCafes, markSettingsDirty,
+         myProfile, saveMyProfile, sharingMembers } from '../store.js';
 import {
   PROVIDERS, getImageAPIConfig, setImageAPIConfig, clearImageAPIConfig,
 } from '../imaging.js';
-import { h, esc, toast, confirmSheet } from '../ui.js';
+import { h, esc, toast, confirmSheet, ownerBadge } from '../ui.js';
 import { signIn, signOut, currentUser, isSignedIn, redirectURL } from '../auth.js';
 import { GEMINI_PROXY } from '../config.js';
 import { seedDemoData } from '../seed.js';
@@ -14,6 +15,8 @@ export async function render(root) {
   const cfg = sb.getConfig();
   const img = getImageAPIConfig();
   const user = currentUser();
+  const prof = myProfile();
+  const others = sharingMembers();
   const beans = await listBeans();
   const cafes = await listCafes();
 
@@ -35,6 +38,33 @@ export async function render(root) {
               <div class="hint" style="margin:0;overflow:hidden;text-overflow:ellipsis">${esc(user?.email || '')}</div>
             </div>
           </div>
+          <div class="field">
+            <label for="s-name">Display name</label>
+            <input id="s-name" data-name placeholder="Norm"
+                   value="${esc(prof?.display_name || '')}">
+            <div class="hint">Shown on entries you share. Your email is never shown.</div>
+          </div>
+
+          <label class="share-row">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:15px">Share my log</div>
+              <div class="hint" style="margin:2px 0 0">
+                Lets other members see (but never edit) your beans and cafés.
+              </div>
+            </div>
+            <input type="checkbox" data-share ${prof?.share_log ? 'checked' : ''}>
+            <span class="switch"></span>
+          </label>
+          <button class="btn-primary btn-block" data-saveprof style="margin-top:12px">Save profile</button>
+          <div class="hint" data-profstatus style="margin-top:9px"></div>
+
+          ${others.length ? `<div class="hint" style="margin-top:14px">
+            Sharing with you: ${others.map(p => ownerBadge(p)).join(' ')}
+          </div>` : `<div class="hint" style="margin-top:14px">
+            Nobody else is sharing yet — the Everyone toggle appears once someone does.
+          </div>`}
+
+          <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
           <button class="btn-block" data-signout>Sign out</button>
           <div class="hint" style="margin-top:10px">
             Signing out leaves this device's data in place; it stops syncing until you sign back in.
@@ -156,6 +186,28 @@ export async function render(root) {
       <div class="hint" style="text-align:center">Brewlog · local-first · v1.0</div>
     </div>
   </div>`);
+
+  /* --- profile --- */
+  view.querySelector('[data-saveprof]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const st = view.querySelector('[data-profstatus]');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Saving…';
+    try {
+      await saveMyProfile({
+        display_name: view.querySelector('[data-name]').value.trim() || null,
+        share_log: view.querySelector('[data-share]').checked,
+      });
+      st.textContent = view.querySelector('[data-share]').checked
+        ? '✓ Saved. Other members can now see your entries.'
+        : '✓ Saved. Your log is private.';
+    } catch (err) {
+      st.textContent = err.message || 'Could not save';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save profile';
+    }
+  });
 
   /* --- account --- */
   const authStatus = view.querySelector('[data-authstatus]');

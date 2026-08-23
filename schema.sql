@@ -66,6 +66,32 @@ alter table public.cafes add column if not exists user_id uuid references auth.u
 create index if not exists beans_user_updated_idx on public.beans (user_id, updated_at);
 create index if not exists cafes_user_updated_idx on public.cafes (user_id, updated_at);
 
+-- ------------------------------------------------------------- sharing --
+-- A member may opt in to letting other members READ their log. Nobody is
+-- visible by default, and shared entries stay read-only to everyone else.
+
+create table if not exists public.profiles (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  display_name text,
+  share_log    boolean default false,
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+alter table public.profiles enable row level security;
+
+-- every member can see who is sharing (name only, never the email)
+drop policy if exists "profiles readable" on public.profiles;
+create policy "profiles readable" on public.profiles
+  for select to authenticated using (true);
+
+drop policy if exists "own profile write" on public.profiles;
+create policy "own profile write" on public.profiles
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "own profile update" on public.profiles;
+create policy "own profile update" on public.profiles
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 -- ------------------------------------------------------------- policies --
 
 alter table public.beans enable row level security;
@@ -75,17 +101,48 @@ alter table public.cafes enable row level security;
 drop policy if exists "anon full access" on public.beans;
 drop policy if exists "anon full access" on public.cafes;
 
+-- Read: your own rows, plus rows owned by members who opted into sharing.
+-- Write: only ever your own. Split into separate policies on purpose — a
+-- single FOR ALL policy would let the read condition authorise writes too.
 drop policy if exists "own beans" on public.beans;
-create policy "own beans" on public.beans
-  for all to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "beans readable" on public.beans;
+create policy "beans readable" on public.beans
+  for select to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p
+               where p.user_id = beans.user_id and p.share_log)
+  );
+drop policy if exists "beans insert own" on public.beans;
+create policy "beans insert own" on public.beans
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "beans update own" on public.beans;
+create policy "beans update own" on public.beans
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "beans delete own" on public.beans;
+create policy "beans delete own" on public.beans
+  for delete to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "own cafes" on public.cafes;
-create policy "own cafes" on public.cafes
-  for all to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "cafes readable" on public.cafes;
+create policy "cafes readable" on public.cafes
+  for select to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p
+               where p.user_id = cafes.user_id and p.share_log)
+  );
+drop policy if exists "cafes insert own" on public.cafes;
+create policy "cafes insert own" on public.cafes
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "cafes update own" on public.cafes;
+create policy "cafes update own" on public.cafes
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "cafes delete own" on public.cafes;
+create policy "cafes delete own" on public.cafes
+  for delete to authenticated using (auth.uid() = user_id);
 
 -- Per-account app settings (currently the image-API key), so a second
 -- device picks them up after sign-in instead of asking again.
@@ -105,6 +162,12 @@ grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.beans to authenticated;
 grant select, insert, update, delete on public.cafes to authenticated;
 grant select, insert, update, delete on public.settings to authenticated;
+grant select, insert, update on public.profiles to authenticated;
+
+-- give every existing member a profile row (not sharing by default)
+insert into public.profiles (user_id, display_name)
+select id, coalesce(split_part(email, '@', 1), 'Member') from auth.users
+on conflict (user_id) do nothing;
 
 -- ------------------------------------------------------------ migration --
 -- Adopt rows created before accounts existed. Sign in through the app once so
@@ -194,5 +257,5 @@ notify pgrst, 'reload schema';
 
 do $$
 begin
-  raise notice 'Done. Tables: beans, cafes, settings. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
+  raise notice 'Done. Tables: beans, cafes, settings, profiles. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
 end $$;

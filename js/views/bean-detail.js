@@ -1,7 +1,7 @@
 /* Single bean — hero shot, radar, details, notes. */
 
-import { getBean, beanImageURL, removeBean, AXES, AXIS_LABELS } from '../store.js';
-import { h, esc, icon, stars, fmtDate, confirmSheet, toast } from '../ui.js';
+import { getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById } from '../store.js';
+import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge } from '../ui.js';
 import { radarSVG } from '../radar.js';
 
 export async function render(root, id) {
@@ -11,6 +11,9 @@ export async function render(root, id) {
       <h3>Bean not found</h3><p>It may have been deleted.</p></div></div>`;
     return;
   }
+
+  const foreign = isForeign(b);
+  const owner = foreign ? membersById().get(b.user_id) : null;
 
   const kv = [
     ['Origin', [b.origin, b.region].filter(Boolean).join(' · ')],
@@ -27,8 +30,8 @@ export async function render(root, id) {
     <div class="topbar">
       <button class="icon-btn" data-back aria-label="Back">${icon('back')}</button>
       <div class="spacer"></div>
-      <button class="icon-btn" data-edit aria-label="Edit">${icon('edit')}</button>
-      <button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>
+      ${foreign ? '' : `<button class="icon-btn" data-edit aria-label="Edit">${icon('edit')}</button>
+      <button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>`}
     </div>
     <div class="view">
       <div class="hero glass">
@@ -41,6 +44,9 @@ export async function render(root, id) {
           ${b.overall ? `<div style="margin-top:8px">${stars(b.overall)}</div>` : ''}
         </div>
       </div>
+
+      ${foreign ? `<div class="read-only-note" style="margin-bottom:16px">
+        ${ownerBadge(owner)} <span>Shared entry — read only</span></div>` : ''}
 
       ${(b.flavor_notes || []).length ? `
         <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px">
@@ -73,14 +79,14 @@ export async function render(root, id) {
   </div>`);
 
   view.querySelector('[data-back]').onclick = () => history.length > 1 ? history.back() : (location.hash = '#/beans');
-  view.querySelector('[data-edit]').onclick = () => { location.hash = `#/bean/${b.id}/edit`; };
-  view.querySelector('[data-del]').onclick = async () => {
+  view.querySelector('[data-edit]')?.addEventListener('click', () => { location.hash = `#/bean/${b.id}/edit`; });
+  view.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (await confirmSheet('Delete this bean?', `“${b.name || 'Untitled'}” and its photo will be removed.`)) {
       await removeBean(b.id);
       toast('Deleted');
       location.hash = '#/beans';
     }
-  };
+  });
 
   root.appendChild(view);
 

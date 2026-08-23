@@ -62,6 +62,29 @@ export function bindStars(el, onChange) {
   });
 }
 
+/* Per-member colours. Four slots, validated all-pairs against the dark
+   surface (worst CVD ΔE 6.9) — which is only legal because every badge also
+   carries the member's initial, so identity is never colour alone. A fifth
+   sharer folds to neutral rather than inventing a hue. */
+export const MEMBER_COLORS = ['#3987e5', '#c98500', '#d55181', '#008300'];
+export const MEMBER_NEUTRAL = '#8B8178';
+
+export function memberColor(index) {
+  return index >= 0 && index < MEMBER_COLORS.length ? MEMBER_COLORS[index] : MEMBER_NEUTRAL;
+}
+
+/** Colour dot + initial + name. Identity reads without colour. */
+export function ownerBadge(profile, { compact = false } = {}) {
+  if (!profile) return '';
+  const name = profile.display_name || 'Member';
+  const color = memberColor(profile._slot ?? -1);
+  const initial = name.trim().charAt(0).toUpperCase() || '?';
+  return `<span class="owner-badge" title="${esc(name)}">
+    <span class="owner-dot" style="background:${color}">${esc(initial)}</span>
+    ${compact ? '' : `<span class="owner-name">${esc(name)}</span>`}
+  </span>`;
+}
+
 export function toast(msg, ms = 2400) {
   document.querySelectorAll('.toast').forEach(t => t.remove());
   const el = h(`<div class="toast">${esc(msg)}</div>`);

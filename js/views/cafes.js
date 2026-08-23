@@ -1,13 +1,20 @@
 /* Cafes — map, list, star ratings. */
 
-import { listCafes, saveCafe, blankCafe } from '../store.js';
-import { h, esc, icon, stars, empty, sheet, toast, bindStars } from '../ui.js';
+import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign } from '../store.js';
+import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, memberColor } from '../ui.js';
 import { findCafesAround, locate, formatDistance, distanceMeters } from '../places.js';
 
 let mapRef = null;
 
+const scope = { shared: false };
+const LS_SHARED = 'brewlog.scope.cafes';
+try { scope.shared = localStorage.getItem(LS_SHARED) === '1'; } catch {}
+
 export async function render(root) {
-  const cafes = await listCafes();
+  const others = sharingMembers();
+  if (!others.length) scope.shared = false;
+  const cafes = await listCafes({ shared: scope.shared });
+  const members = membersById();
 
   const view = h(`<div>
     <div class="topbar">
@@ -31,6 +38,10 @@ export async function render(root) {
         ${icon('search')}
         <input type="search" placeholder="Search cafés and notes…" data-q>
       </div>
+      ${others.length ? `<div class="scope-toggle" data-scope>
+        <button data-sc="mine" aria-pressed="${!scope.shared}">Mine</button>
+        <button data-sc="all" aria-pressed="${scope.shared}">Everyone</button>
+      </div>` : ''}
       <div data-list></div>
     </div>
   </div>`);
@@ -48,18 +59,34 @@ export async function render(root) {
       return;
     }
     if (!rows.length) { listEl.innerHTML = empty('search', 'Nothing matches', 'Try another search.'); return; }
-    listEl.innerHTML = rows.map(c => `
-      <button class="glass cafe-row" data-go="#/cafe/${esc(c.id)}">
+    listEl.innerHTML = rows.map(c => {
+      const foreign = isForeign(c);
+      const owner = foreign ? members.get(c.user_id) : null;
+      return `
+      <button class="glass cafe-row ${foreign ? 'shared' : ''}"
+        ${foreign ? `style="--owner:${memberColor(owner?._slot ?? -1)}"` : ''}
+        data-go="#/cafe/${esc(c.id)}">
         <div class="avatar">${esc((c.name || '?').trim().charAt(0).toUpperCase())}</div>
         <div class="body">
           <div class="nm">${esc(c.name || 'Untitled')}</div>
           <div class="addr">${esc(c.address || 'No address')}</div>
-          <div style="margin-top:5px">${stars(c.rating)}</div>
+          <div style="margin-top:5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            ${stars(c.rating)}${foreign ? ownerBadge(owner) : ''}
+          </div>
         </div>
-      </button>`).join('');
+      </button>`;
+    }).join('');
   }
 
   qEl.addEventListener('input', paint);
+
+  view.querySelector('[data-scope]')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sc]');
+    if (!b) return;
+    scope.shared = b.dataset.sc === 'all';
+    try { localStorage.setItem(LS_SHARED, scope.shared ? '1' : '0'); } catch {}
+    document.dispatchEvent(new CustomEvent('brewlog:data'));
+  });
   listEl.addEventListener('click', e => {
     const b = e.target.closest('[data-go]');
     if (b) location.hash = b.dataset.go;
@@ -123,12 +150,23 @@ export async function render(root) {
   }).addTo(map);
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 28] });
+  const ownerPin = (c) => {
+    if (!isForeign(c)) return pinIcon;
+    const color = memberColor(members.get(c.user_id)?._slot ?? -1);
+    return L.divIcon({
+      className: '',
+      html: `<div class="pin" style="background:${color}"></div>`,
+      iconSize: [30, 30], iconAnchor: [15, 28],
+    });
+  };
 
   const group = [];
   pinned.forEach(c => {
-    const m = L.marker([c.lat, c.lng], { icon: pinIcon }).addTo(map);
+    const m = L.marker([c.lat, c.lng], { icon: ownerPin(c) }).addTo(map);
+    const who = isForeign(c) ? members.get(c.user_id)?.display_name || 'Member' : null;
     m.bindPopup(`<strong>${esc(c.name || 'Untitled')}</strong><br>
       <span style="color:#B4A392">${'★'.repeat(c.rating)}${'☆'.repeat(5 - c.rating)}</span><br>
+      ${who ? `<span style="color:#B4A392">rated by ${esc(who)}</span><br>` : ''}
       <a href="#/cafe/${esc(c.id)}" style="color:#E4C79A">Open</a>`);
     group.push([c.lat, c.lng]);
   });
