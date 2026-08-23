@@ -712,6 +712,13 @@ input[type=range]::-moz-range-thumb {
    pill leaves a dead strip beneath it. Dock the bar to the bottom edge and
    let its glass run under the home indicator, like a native tab bar. */
 @media (display-mode: standalone) {
+  /* iOS keeps a "small" viewport until the document can scroll, and pins
+     fixed bottom:0 elements to ITS bottom — so on short pages (the empty
+     Beans list) the bar floated above a strip of page background, while
+     scrollable pages looked right. Forcing every page a hair taller than
+     the large viewport keeps the full-height viewport engaged. */
+  #app { min-height: calc(100lvh + 2px); }
+
   #tabbar {
     bottom: 0;
     width: 100%;
