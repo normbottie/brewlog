@@ -113,6 +113,36 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+/* ---- iOS first-paint viewport fix ---------------------------------
+   In the installed app, iOS sometimes lays out position:fixed elements
+   against a stale viewport on the first paint, leaving the tab bar
+   floating above the bottom edge until something forces a relayout
+   (navigating fixes it, which is the tell). Jiggle the scroll position
+   and reflow the bar a few times after launch, and again whenever the
+   visual viewport changes. */
+(function () {
+  const settle = () => {
+    const tb = document.getElementById('tabbar');
+    if (tb) {
+      const prev = tb.style.bottom;
+      tb.style.bottom = '-1px';
+      void tb.offsetHeight;          // force layout
+      tb.style.bottom = prev;
+    }
+    // a scroll nudge is what actually makes iOS recompute the viewport
+    if (window.scrollY === 0) {
+      window.scrollTo(0, 1);
+      window.scrollTo(0, 0);
+    }
+  };
+  [150, 600, 1500].forEach(ms => setTimeout(settle, ms));
+  window.addEventListener('pageshow', () => setTimeout(settle, 80));
+  window.addEventListener('orientationchange', () => setTimeout(settle, 120));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => setTimeout(settle, 60));
+  }
+})();
+
 /* ---- pull to refresh ----------------------------------------------
    The installed app has no browser chrome, so there is no reload button.
    Pull down from the top of any page to refresh (which also syncs). */
