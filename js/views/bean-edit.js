@@ -10,6 +10,8 @@ import {
   fileToImage, plainFrame, apiStudio, readBagLabel, hasImageAPI,
 } from '../imaging.js';
 
+const fmtR = (v) => Number(v ?? 0).toFixed(1);
+
 export async function render(root, id) {
   const isNew = !id;
   const bean = isNew ? blankBean() : structuredClone(await getBean(id));
@@ -128,9 +130,9 @@ export async function render(root, id) {
       <div class="glass card-pad" style="margin-top:12px">
         ${AXES.map(a => `<div class="slider-row">
           <div class="lbl">${AXIS_LABELS[a]}</div>
-          <input type="range" min="0" max="5" step="1" value="${bean.ratings[a]}" data-axis="${a}"
+          <input type="range" min="0" max="5" step="0.1" value="${bean.ratings[a]}" data-axis="${a}"
                  aria-label="${AXIS_LABELS[a]}">
-          <div class="val" data-axisval="${a}">${bean.ratings[a]}</div>
+          <div class="val" data-axisval="${a}">${fmtR(bean.ratings[a])}</div>
         </div>`).join('')}
       </div>
 
@@ -342,8 +344,8 @@ export async function render(root, id) {
     bindRange(inp);
     inp.addEventListener('input', () => {
       const a = inp.dataset.axis;
-      bean.ratings[a] = Number(inp.value);
-      view.querySelector(`[data-axisval="${a}"]`).textContent = inp.value;
+      bean.ratings[a] = Math.round(Number(inp.value) * 10) / 10;
+      view.querySelector(`[data-axisval="${a}"]`).textContent = fmtR(bean.ratings[a]);
       radarBox.innerHTML = radarSVG(bean.ratings);
     });
   });

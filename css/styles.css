@@ -450,7 +450,7 @@ select {
 }
 .slider-row .lbl { width: 92px; flex: 0 0 auto; font-size: 14px; color: var(--text-muted); font-weight: 550; }
 .slider-row .val {
-  width: 30px;
+  width: 34px;
   flex: 0 0 auto;
   text-align: right;
   font-variant-numeric: tabular-nums;

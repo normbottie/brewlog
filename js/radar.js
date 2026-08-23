@@ -63,7 +63,7 @@ export function radarSVG(ratings = {}, opts = {}) {
   });
 
   return `<svg class="radar" viewBox="0 0 ${size} ${size}" role="img"
-    aria-label="Tasting profile: ${AXES.map((a, i) => `${AXIS_LABELS[a]} ${vals[i]}`).join(', ')}">${g}</svg>`;
+    aria-label="Tasting profile: ${AXES.map((a, i) => `${AXIS_LABELS[a]} ${vals[i].toFixed(1)}`).join(', ')}">${g}</svg>`;
 }
 
 /** Tiny sparkline version for list cards. */

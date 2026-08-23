@@ -56,7 +56,7 @@ export async function render(root, id) {
             <div style="height:100%;width:${((Number(b.ratings?.[a]) || 0) / 5) * 100}%;
                  background:linear-gradient(90deg,rgba(201,168,124,.5),var(--tan-bright));border-radius:3px"></div>
           </div>
-          <div class="val">${Number(b.ratings?.[a]) || 0}</div>
+          <div class="val">${(Number(b.ratings?.[a]) || 0).toFixed(1)}</div>
         </div>`).join('')}
       </div>
 
