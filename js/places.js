@@ -19,9 +19,13 @@ export function distanceMeters(a, b) {
   return 2 * R_EARTH * Math.asin(Math.sqrt(h));
 }
 
+const M_PER_MILE = 1609.344;
+
 export function formatDistance(m) {
-  if (m < 1000) return `${Math.round(m / 10) * 10} m`;
-  return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+  const miles = m / M_PER_MILE;
+  if (miles < 0.19) return `${Math.round(m / M_PER_MILE * 5280 / 50) * 50} ft`;
+  if (miles < 10) return `${miles.toFixed(1)} mi`;
+  return `${Math.round(miles)} mi`;
 }
 
 /** Current position as {lat, lng}; rejects with a readable message. */
@@ -57,7 +61,7 @@ export async function nearbyCafes({ lat, lng }, radius = 1500) {
   // Deliberately broad: some cafes are tagged as bakeries, restaurants or
   // plain shops that happen to sell coffee.
   const a = `(around:${radius},${lat},${lng})`;
-  const query = `[out:json][timeout:25];
+  const query = `[out:json][timeout:20];
 (
   nwr["amenity"="cafe"]${a};
   nwr["shop"="coffee"]${a};
@@ -66,13 +70,15 @@ export async function nearbyCafes({ lat, lng }, radius = 1500) {
 );
 out center;`;
 
-  let lastErr = null;
-  for (const url of ENDPOINTS) {
-    try {
+  /* Overpass mirrors vary from fast to unusable minute to minute, so ask
+     both at once, take whichever answers first, and give up after 15s
+     rather than leaving the user watching a spinner. */
+  const ask = async (url, signal) => {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'data=' + encodeURIComponent(query),
+        signal,
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
@@ -106,11 +112,22 @@ out center;`;
         })
         .filter(Boolean)
         .sort((a, b) => a.distance - b.distance);
-    } catch (err) {
-      lastErr = err;
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    return await Promise.any(ENDPOINTS.map(u => ask(u, controller.signal)));
+  } catch (err) {
+    const inner = err?.errors?.[0];
+    if (controller.signal.aborted) {
+      throw new Error('The cafe database is being slow right now — try again in a moment');
     }
+    throw new Error(inner?.message || err?.message || 'Could not reach the cafe database');
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
   }
-  throw new Error(lastErr?.message || 'Could not reach the cafe database');
 }
 
 /**
@@ -118,7 +135,7 @@ out center;`;
  * answer rather than an artefact of the starting radius.
  * @returns {Promise<{results: Array, radius: number}>}
  */
-export async function findCafesAround(point, radii = [1500, 5000, 15000]) {
+export async function findCafesAround(point, radii = [2400, 8000]) {
   let lastErr = null;
   for (const radius of radii) {
     try {

@@ -29,13 +29,13 @@ console.log('status:', status);
 
 await page.screenshot({ path: `${OUT}/edit-before.png` });
 
-// change backdrop -> the photo variant should rebuild
-await page.click('[data-bd="espresso"]');
-await page.waitForTimeout(3000);
-const status2 = await page.$eval('[data-imgstatus]', e => e.textContent.trim());
-const pressed = await page.$eval('[data-bd="espresso"]', e => e.getAttribute('aria-pressed'));
-console.log('after backdrop change -> pressed:', pressed, '| status:', status2);
+const backdrops = await page.$$('[data-bd]');
+console.log('backdrop buttons (expect 0):', backdrops.length);
 
+const tabs = await page.$$eval('#tabbar button', els => els.map(e => e.textContent.trim()));
+console.log('tabs:', tabs);
+
+await page.waitForTimeout(2500);
 const thumbCount = await page.$$eval('[data-v] img', els => els.length);
 console.log('thumbnails with images:', thumbCount);
 await page.screenshot({ path: `${OUT}/edit-after.png` });

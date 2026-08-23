@@ -81,7 +81,7 @@ export async function render(root) {
       const where = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
       if (!results.length) {
         nearStatus.innerHTML =
-          `No cafes are mapped within 15&nbsp;km of ${esc(where)}. That is OpenStreetMap's ` +
+          `No cafes are mapped within 5&nbsp;miles of ${esc(where)}. That is OpenStreetMap's ` +
           `coverage, not an error — tap the map to add one yourself.`;
         return;
       }

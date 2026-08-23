@@ -417,9 +417,16 @@ export async function localStudio(img, opts = {}) {
   return canvasToBlob(out, 'image/jpeg', 0.92);
 }
 
-/** Simple uniform crop with no cutout — the safe fallback. */
-export async function plainFrame(img, backdropKey = 'espresso') {
-  return localStudio(img, { backdrop: backdropKey, cutout: false });
+/** The actual photo, cover-cropped to the shared 4:5 frame. Nothing added. */
+export async function plainFrame(img) {
+  const out = document.createElement('canvas');
+  out.width = OUT_W; out.height = OUT_H;
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  const s = Math.max(OUT_W / img.width, OUT_H / img.height);
+  const dw = img.width * s, dh = img.height * s;
+  ctx.drawImage(img, (OUT_W - dw) / 2, (OUT_H - dh) / 2, dw, dh);
+  return canvasToBlob(out, 'image/jpeg', 0.92);
 }
 
 /* ================= API studio render ================= */
@@ -837,10 +844,12 @@ export async function readBagLabel(img) {
 }
 
 /** Render via the configured API, then normalise to OUT_W x OUT_H. */
+export const RENDER_BACKDROP = 'espresso';
+
 export async function apiStudio(img, opts = {}) {
   const cfg = getImageAPIConfig();
   if (!cfg) throw new Error('No image API key configured');
-  const prompt = studioPrompt(opts.backdrop || 'white');
+  const prompt = studioPrompt(opts.backdrop || RENDER_BACKDROP);
 
   // send a reasonably sized copy, not the full 12MP phone photo
   const small = fit(img, 1024);

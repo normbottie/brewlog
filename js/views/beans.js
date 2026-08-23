@@ -21,6 +21,7 @@ export async function render(root) {
       <div class="spacer"></div>
       <span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}"
             data-sync-dot title="${esc(syncState.message)}"></span>
+      <button class="icon-btn" data-new aria-label="Log a new bag">${icon('plus')}</button>
     </div>
     <div class="view">
       <div class="search-bar">
@@ -29,6 +30,9 @@ export async function render(root) {
       </div>
       <div class="filter-scroll" data-filters></div>
       <div data-results></div>
+      <button class="btn-primary btn-block" data-new2 style="margin-top:18px">
+        ${icon('plus')} Log a new bag
+      </button>
     </div>
   </div>`);
 
@@ -76,7 +80,7 @@ export async function render(root) {
     const rows = beans.filter(match);
     if (!beans.length) {
       results.innerHTML = empty('bean', 'No beans yet',
-        'Tap Log to photograph your first bag and record how it tasted.');
+        'Photograph your first bag and record how it tasted.');
       return;
     }
     if (!rows.length) {
@@ -114,6 +118,10 @@ export async function render(root) {
   results.addEventListener('click', e => {
     const b = e.target.closest('[data-go]');
     if (b) location.hash = b.dataset.go;
+  });
+
+  view.querySelectorAll('[data-new], [data-new2]').forEach(b => {
+    b.onclick = () => { location.hash = '#/new'; };
   });
 
   paint();

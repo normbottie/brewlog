@@ -7,8 +7,7 @@ import {
 import { h, esc, icon, stars, bindStars, toast, bindRange } from '../ui.js';
 import { radarSVG } from '../radar.js';
 import {
-  fileToImage, plainFrame, apiStudio, readBagLabel,
-  BACKDROPS, hasImageAPI,
+  fileToImage, plainFrame, apiStudio, readBagLabel, hasImageAPI,
 } from '../imaging.js';
 
 export async function render(root, id) {
@@ -22,7 +21,6 @@ export async function render(root, id) {
   let rawBlob = null;
   let chosen = null;      // Blob to save
   const variants = {};    // { plain, ai } -> { blob, url }
-  let backdrop = 'white';
   let selected = null;
 
   const view = h(`<div>
@@ -47,13 +45,6 @@ export async function render(root, id) {
 
       <div data-imgtools hidden style="margin-top:13px">
         <div class="thumb-row" data-variants></div>
-        <div style="margin-top:11px">
-          <label style="display:block;font-size:12.5px;letter-spacing:.085em;text-transform:uppercase;color:var(--text-faint);font-weight:600;margin-bottom:7px">Backdrop</label>
-          <div class="seg" data-backdrops>
-            ${Object.entries(BACKDROPS).map(([k, v]) =>
-              `<button type="button" data-bd="${k}" aria-pressed="${k === 'white'}">${esc(v.label)}</button>`).join('')}
-          </div>
-        </div>
         <div data-imgstatus class="hint" style="margin-top:10px"></div>
         <button class="btn-block" data-read style="margin-top:11px">
           ${icon('sparkle')} Read the label
@@ -203,13 +194,13 @@ export async function render(root, id) {
     status.innerHTML = `<span class="busy"><span class="spinner"></span>Framing…</span>`;
     paintVariants();
     try {
-      variants.plain = { blob: await plainFrame(rawImg, backdrop) };
+      variants.plain = { blob: await plainFrame(rawImg) };
       variants.plain.url = URL.createObjectURL(variants.plain.blob);
       if (!selected || selected === 'plain') select('plain');
       else paintVariants();
       paintVariants();
       status.textContent = hasImageAPI()
-        ? 'Pick a background, then tap “AI studio” to re-render on it.'
+        ? 'Tap “AI studio” for a studio product shot of the bag.'
         : 'Add an image API key in Settings for a studio render.';
     } catch (err) {
       status.textContent = 'Could not process that photo. ' + (err.message || '');
@@ -256,11 +247,10 @@ export async function render(root, id) {
       status.textContent = 'The original photo is not on this device — retake it to re-render.';
       return;
     }
-    status.innerHTML = `<span class="busy"><span class="spinner"></span>Rendering on ${esc(BACKDROPS[backdrop].label.toLowerCase())} — this takes 10–30s…</span>`;
+    status.innerHTML = `<span class="busy"><span class="spinner"></span>Rendering the studio shot — this takes 10–30s…</span>`;
     try {
-      const blob = await apiStudio(rawImg, { backdrop });
+      const blob = await apiStudio(rawImg);
       variants.ai = { blob, url: URL.createObjectURL(blob) };
-      variants.ai.backdrop = backdrop;
       select('ai');
       paintVariants();
       status.textContent = 'Studio render ready.';
@@ -336,28 +326,6 @@ export async function render(root, id) {
     }
     return filled;
   }
-
-  view.querySelector('[data-backdrops]').addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-bd]');
-    if (!b) return;
-    backdrop = b.dataset.bd;
-    view.querySelectorAll('[data-bd]').forEach(x =>
-      x.setAttribute('aria-pressed', String(x.dataset.bd === backdrop)));
-
-    if (!rawImg) {
-      status.textContent = 'Retake the photo to apply a new background.';
-      return;
-    }
-
-    // the local framing is free, so redo it straight away
-    if (variants.plain) { URL.revokeObjectURL(variants.plain.url); delete variants.plain; }
-    await buildVariants();
-
-    // an AI render costs money, so ask rather than spending it automatically
-    if (variants.ai && variants.ai.backdrop !== backdrop) {
-      status.textContent = `Tap “AI studio” to re-render on ${BACKDROPS[backdrop].label.toLowerCase()}.`;
-    }
-  });
 
   /* ---------- form wiring ---------- */
 
@@ -435,10 +403,12 @@ export async function render(root, id) {
       try {
         rawBlob = storedRaw;
         rawImg = await fileToImage(storedRaw);
-        status.textContent = 'Pick a background, or tap the frame to replace the photo.';
+        // build the "Photo" option so the saved render isn't the only choice
+        await buildVariants();
+        status.textContent = 'Tap the frame to replace the photo.';
       } catch { /* corrupt blob — fall through */ }
     } else if (savedURL) {
-      status.textContent = 'Only the finished image is saved for this bag — retake the photo to change the background.';
+      status.textContent = 'Only the finished image is saved for this bag — retake the photo to re-render it.';
     }
   }
 

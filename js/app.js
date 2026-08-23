@@ -15,7 +15,6 @@ const tabbar = document.getElementById('tabbar');
 
 const TABS = [
   { id: 'beans', label: 'Beans', route: '#/beans', icon: 'bean' },
-  { id: 'new', label: 'Log', route: '#/new', icon: 'plus' },
   { id: 'cafes', label: 'Cafes', route: '#/cafes', icon: 'map' },
   { id: 'settings', label: 'Settings', route: '#/settings', icon: 'gear' },
 ];
@@ -39,7 +38,7 @@ const ROUTES = [
   [/^#\/beans\/?$/, () => ({ view: Beans, args: [], tab: 'beans' })],
   [/^#\/bean\/([^/]+)\/edit$/, m => ({ view: BeanEdit, args: [m[1]], tab: 'beans' })],
   [/^#\/bean\/([^/]+)$/, m => ({ view: BeanDetail, args: [m[1]], tab: 'beans' })],
-  [/^#\/new\/?$/, () => ({ view: BeanEdit, args: [null], tab: 'new' })],
+  [/^#\/new\/?$/, () => ({ view: BeanEdit, args: [null], tab: 'beans' })],
   [/^#\/cafes\/?$/, () => ({ view: Cafes, args: [], tab: 'cafes' })],
   [/^#\/cafe\/([^/]+)$/, m => ({ view: CafeDetail, args: [m[1]], tab: 'cafes' })],
   [/^#\/settings\/?$/, () => ({ view: Settings, args: [], tab: 'settings' })],
