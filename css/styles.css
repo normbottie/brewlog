@@ -188,6 +188,8 @@ button, .btn {
 }
 button:active, .btn:active { transform: scale(.965); }
 button:disabled { opacity: .4; cursor: not-allowed; }
+/* default size for inline icons in buttons; more specific rules below win */
+button > svg, .btn > svg { width: 19px; height: 19px; flex: 0 0 auto; }
 
 .btn-primary {
   background: linear-gradient(163deg, var(--tan-bright), var(--tan) 55%, #A98A62);
@@ -381,6 +383,8 @@ select {
 /* ============================================================
    Stars
    ============================================================ */
+
+.radar-mini { width: 34px; height: 34px; flex: 0 0 auto; }
 
 .stars { display: inline-flex; gap: 2px; align-items: center; }
 .stars svg { width: 15px; height: 15px; }

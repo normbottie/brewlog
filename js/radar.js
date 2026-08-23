@@ -78,7 +78,7 @@ export function radarMini(ratings = {}, size = 34) {
   }).join(' ');
   const outline = AXES.map((_, i) =>
     `${(cx + Math.cos(angle(i)) * R).toFixed(1)},${(cy + Math.sin(angle(i)) * R).toFixed(1)}`).join(' ');
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+  return `<svg class="radar-mini" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
     <polygon points="${outline}" fill="none" stroke="rgba(255,240,220,.14)" stroke-width="1"/>
     <polygon points="${pts}" fill="rgba(201,168,124,.34)" stroke="#C9A87C" stroke-width="1.4" stroke-linejoin="round"/>
   </svg>`;

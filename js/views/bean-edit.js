@@ -7,7 +7,7 @@ import {
 import { h, esc, icon, stars, bindStars, toast, bindRange } from '../ui.js';
 import { radarSVG } from '../radar.js';
 import {
-  fileToImage, localStudio, plainFrame, apiStudio,
+  fileToImage, localStudio, plainFrame, apiStudio, readBagLabel,
   BACKDROPS, hasImageAPI,
 } from '../imaging.js';
 
@@ -55,6 +55,10 @@ export async function render(root, id) {
           </div>
         </div>
         <div data-imgstatus class="hint" style="margin-top:10px"></div>
+        <button class="btn-block" data-read style="margin-top:11px">
+          ${icon('sparkle')} Read the label
+        </button>
+        <div data-readstatus class="hint" style="margin-top:8px"></div>
         <button class="btn-sm btn-block" data-retake style="margin-top:11px">Retake photo</button>
       </div>
 
@@ -196,33 +200,30 @@ export async function render(root, id) {
   }
 
   async function buildVariants() {
-    status.innerHTML = `<span class="busy"><span class="spinner"></span>Building studio shot…</span>`;
+    status.innerHTML = `<span class="busy"><span class="spinner"></span>Framing…</span>`;
     paintVariants();
     try {
-      variants.cutout = { blob: await localStudio(rawImg, { backdrop }) };
-      variants.cutout.url = URL.createObjectURL(variants.cutout.blob);
-      if (!selected) select('cutout');
+      variants.plain = { blob: await plainFrame(rawImg, backdrop) };
+      variants.plain.url = URL.createObjectURL(variants.plain.blob);
+      if (!selected) select('plain');
       paintVariants();
 
-      variants.plain = { blob: await plainFrame(rawImg, backdrop) };
-      variants.plain.url = URL.createObjectURL(variants.plain.blob);
+      variants.cutout = { blob: await localStudio(rawImg, { backdrop }) };
+      variants.cutout.url = URL.createObjectURL(variants.cutout.blob);
       paintVariants();
       status.textContent = hasImageAPI()
-        ? 'Cut out on device. Tap “AI studio” for a full re-render.'
-        : 'Cut out on device. Add an image API key in Settings for true studio renders.';
+        ? 'Tap “AI studio” for a three-quarter product shot on white.'
+        : 'Add an image API key in Settings for a proper studio render.';
     } catch (err) {
-      status.textContent = 'Cutout failed — using the plain frame. ' + (err.message || '');
-      variants.plain = { blob: await plainFrame(rawImg, backdrop) };
-      variants.plain.url = URL.createObjectURL(variants.plain.blob);
-      select('plain');
+      status.textContent = 'Could not process that photo. ' + (err.message || '');
       paintVariants();
     }
   }
 
   function paintVariants() {
     const opts = [
+      { k: 'plain', label: 'Photo' },
       { k: 'cutout', label: 'Cutout' },
-      { k: 'plain', label: 'Plain' },
     ];
     if (hasImageAPI()) opts.push({ k: 'ai', label: 'AI studio' });
 
@@ -266,6 +267,73 @@ export async function render(root, id) {
       status.textContent = 'AI render failed: ' + (err.message || 'unknown error');
       paintVariants();
     }
+  }
+
+  /* ---------- read the label ---------- */
+
+  const readStatus = view.querySelector('[data-readstatus]');
+  view.querySelector('[data-read]').onclick = async (e) => {
+    if (!rawImg) { toast('Take a photo first'); return; }
+    if (!hasImageAPI()) {
+      readStatus.textContent = 'Needs an API key — add one in Settings (a fraction of a cent per read).';
+      return;
+    }
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    readStatus.innerHTML = `<span class="busy"><span class="spinner"></span>Reading the bag…</span>`;
+    try {
+      const found = await readBagLabel(rawImg);
+      const filled = applyExtracted(found);
+      readStatus.textContent = filled.length
+        ? `Filled in ${filled.join(', ')}. Check it against the bag before saving.`
+        : 'Nothing legible found on the label.';
+    } catch (err) {
+      readStatus.textContent = 'Could not read it: ' + (err.message || 'unknown error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  /** Write extracted values into empty fields only — never clobber your typing. */
+  function applyExtracted(found) {
+    const filled = [];
+    const setField = (key, value, label) => {
+      if (!value) return;
+      const el = view.querySelector(`[data-f="${key}"]`);
+      if (!el || el.value.trim()) return;
+      el.value = value;
+      filled.push(label || key);
+    };
+    setField('name', found.name, 'name');
+    setField('roaster', found.roaster, 'roaster');
+    setField('origin', found.origin, 'origin');
+    setField('region', found.region, 'region');
+    setField('varietal', found.varietal, 'varietal');
+    setField('roast_date', found.roast_date, 'roast date');
+    setField('weight_g', found.weight_g, 'weight');
+
+    // selects: only accept a value the dropdown actually offers
+    for (const [key, list, label] of [['process', PROCESSES, 'process'],
+                                      ['roast_level', ROAST_LEVELS, 'roast']]) {
+      const el = view.querySelector(`[data-f="${key}"]`);
+      const hit = list.find(o => o.toLowerCase() === String(found[key] || '').toLowerCase());
+      if (el && !el.value && hit) { el.value = hit; filled.push(label); }
+    }
+
+    const notesEl = view.querySelector('[data-f="flavor_notes"]');
+    if (notesEl && !notesEl.value.trim() && found.flavor_notes.length) {
+      notesEl.value = found.flavor_notes.join(', ');
+      filled.push('flavour notes');
+    }
+
+    const brew = BREW_METHODS.find(m => m.toLowerCase() === String(found.brew_method || '').toLowerCase());
+    if (brew) {
+      bean.brew_method = brew;
+      view.querySelectorAll('[data-brewm]').forEach(x =>
+        x.setAttribute('aria-pressed', String(x.dataset.brewm === brew)));
+      filled.push('brew method');
+    }
+    return filled;
   }
 
   view.querySelector('[data-backdrops]').addEventListener('click', async (e) => {

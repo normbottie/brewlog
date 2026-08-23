@@ -2,6 +2,7 @@
 
 import { listCafes, saveCafe, blankCafe } from '../store.js';
 import { h, esc, icon, stars, empty, sheet, toast, bindStars } from '../ui.js';
+import { nearbyCafes, locate, formatDistance, distanceMeters } from '../places.js';
 
 let mapRef = null;
 
@@ -19,7 +20,10 @@ export async function render(root) {
     </div>
     <div class="view">
       <div id="map"></div>
-      <div class="hint" style="margin-top:8px">Tap the map to drop a pin, or use the + button to search an address.</div>
+      <button class="btn-primary btn-block" data-near style="margin-top:12px">
+        ${icon('locate')} Cafes near me
+      </button>
+      <div class="hint" style="margin-top:8px">Or tap the map to drop a pin, or use + to search an address.</div>
       <div class="search-bar" style="margin-top:16px">
         ${icon('search')}
         <input type="search" placeholder="Search cafes and notes…" data-q>
@@ -59,6 +63,25 @@ export async function render(root) {
   });
 
   view.querySelector('[data-add]').onclick = () => addCafeSheet(null, cafes, paint);
+
+  view.querySelector('[data-near]').onclick = async (e) => {
+    const btn = e.currentTarget;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Finding you…`;
+    try {
+      const here = await locate();
+      if (mapRef) mapRef.setView([here.lat, here.lng], 15);
+      btn.innerHTML = `<span class="spinner"></span> Looking for cafes…`;
+      const found = await nearbyCafes(here, 1500);
+      showNearbySheet(found, here, cafes, paint);
+    } catch (err) {
+      toast(err.message || 'Could not find nearby cafes');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  };
 
   root.appendChild(view);
   paint();
@@ -114,6 +137,56 @@ function whenLeaflet() {
 
 /* ------------------------------------------------------------------ */
 
+/** Results from Overpass, with the ones you've already rated marked. */
+function showNearbySheet(found, here, cafes, onDone) {
+  if (!found.length) {
+    toast('No cafes mapped within 1.5 km — drop a pin instead');
+    return;
+  }
+
+  sheet(`${found.length} cafe${found.length === 1 ? '' : 's'} near you`, (close) => {
+    const already = (c) =>
+      cafes.find(x => Number.isFinite(x.lat) &&
+        distanceMeters({ lat: x.lat, lng: x.lng }, { lat: c.lat, lng: c.lng }) < 60);
+
+    const node = h(`<div>
+      <div class="hint" style="margin:-6px 0 14px">
+        From OpenStreetMap. Tap one to rate it. Missing somewhere? Close this and tap the map.
+      </div>
+      <div data-rows></div>
+    </div>`);
+
+    node.querySelector('[data-rows]').innerHTML = found.map((c, i) => {
+      const mine = already(c);
+      return `<button class="glass cafe-row" data-i="${i}">
+        <div class="avatar">${esc(c.name.trim().charAt(0).toUpperCase())}</div>
+        <div class="body">
+          <div class="nm">${esc(c.name)}</div>
+          <div class="addr">${esc(c.address || c.tags?.['addr:street'] || 'No address on file')}</div>
+          ${mine ? `<div style="margin-top:5px">${stars(mine.rating)}</div>` : ''}
+        </div>
+        <div style="flex:0 0 auto;text-align:right">
+          <div class="chip chip-muted">${esc(formatDistance(c.distance))}</div>
+          ${mine ? '<div class="hint" style="margin-top:5px">rated</div>' : ''}
+        </div>
+      </button>`;
+    }).join('');
+
+    node.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-i]');
+      if (!btn) return;
+      const c = found[Number(btn.dataset.i)];
+      const mine = already(c);
+      close();
+      if (mine) { location.hash = `#/cafe/${mine.id}`; return; }
+      addCafeSheet({ name: c.name, address: c.address, lat: c.lat, lng: c.lng }, cafes, onDone);
+    });
+
+    void here;
+    return node;
+  });
+}
+
 export function addCafeSheet(seed, cafes, onDone) {
   const cafe = { ...blankCafe(), ...(seed || {}) };
   let rating = 0;
@@ -122,7 +195,7 @@ export function addCafeSheet(seed, cafes, onDone) {
     const node = h(`<div>
       <div class="field">
         <label for="c-name">Name</label>
-        <input id="c-name" data-n placeholder="e.g. Sey Coffee">
+        <input id="c-name" data-n placeholder="e.g. Sey Coffee" value="${esc(cafe.name || '')}">
       </div>
       <div class="field">
         <label for="c-addr">Address</label>
@@ -130,7 +203,9 @@ export function addCafeSheet(seed, cafes, onDone) {
           <input id="c-addr" data-a placeholder="Street, city" value="${esc(cafe.address || '')}">
           <button type="button" class="btn-sm" data-find style="flex:0 0 auto">Find</button>
         </div>
-        <div class="hint" data-geo>${seed ? `Pin set: ${seed.lat.toFixed(4)}, ${seed.lng.toFixed(4)}` : 'Search an address, or tap the map to drop a pin.'}</div>
+        <div class="hint" data-geo>${seed && Number.isFinite(seed.lat)
+          ? `Pin set: ${seed.lat.toFixed(4)}, ${seed.lng.toFixed(4)}`
+          : 'Search an address, or tap the map to drop a pin.'}</div>
       </div>
       <div class="field">
         <label>Rating</label>

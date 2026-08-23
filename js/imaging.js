@@ -444,14 +444,49 @@ export function clearImageAPIConfig() {
 
 export const hasImageAPI = () => !!getImageAPIConfig();
 
-export const STUDIO_PROMPT =
-  'Re-photograph this exact coffee bag as a premium studio product shot. ' +
-  'Keep the bag, its label artwork, all text and the packaging shape completely unchanged and legible — ' +
-  'do not invent, redraw, translate or alter any text. ' +
-  'Stand the bag upright, centred, shot straight on at eye level, filling most of the frame. ' +
-  'Place it on a seamless dark warm-brown backdrop with soft top-left key lighting, ' +
-  'a gentle falloff to near-black at the corners, and a soft contact shadow beneath the bag. ' +
-  'Clean, minimal, high-end coffee-roaster catalogue look. Vertical 4:5 framing. No props, no text overlays, no watermark.';
+export const STUDIO_PROMPT = [
+  'Re-photograph this exact coffee bag as a clean e-commerce product shot.',
+  '',
+  'FIDELITY IS THE PRIORITY. This is a photograph of a real product, not a design task.',
+  'Reproduce the packaging exactly as it appears in the source image: every word, letter,',
+  'number, logo, illustration, colour and its position on the bag must match the original.',
+  'Do NOT invent, add, remove, re-letter, re-spell, translate, re-typeset, restyle or',
+  '"improve" any text or graphic. Do not add roaster names, origins, weights, dates,',
+  'tasting notes, barcodes or badges that are not already visible. If part of the label is',
+  'blurred, cropped or unreadable in the source, reproduce it as-is rather than guessing —',
+  'never fabricate legible text where the original is illegible.',
+  '',
+  'CAMERA: a three-quarter product view. The bag stands upright on a flat surface, rotated',
+  'roughly 25-35 degrees so the full front face reads clearly and one side gusset is visible',
+  'along the left edge. Slightly above eye level, straight vertical edges, no fisheye or',
+  'dramatic perspective. Centred, filling most of the frame with even margins.',
+  '',
+  'LIGHTING AND BACKGROUND: seamless pure-white studio sweep. Soft, even, diffused light',
+  'from the upper left, gentle highlights along the bag edges, and a soft contact shadow',
+  'directly beneath the bag. Crisp focus edge to edge.',
+  '',
+  'Vertical 4:5 framing. No props, no hands, no reflections of other objects, no text',
+  'overlays, no watermark, no border.',
+].join(' ');
+
+export const READ_LABEL_PROMPT = [
+  'Read this photograph of a coffee bag and transcribe what is printed on it.',
+  'Return ONLY a JSON object, no prose and no markdown fence, with exactly these keys:',
+  '"name" (the coffee/blend name, e.g. "Old Skool" or "Kirinyaga AB"),',
+  '"roaster" (the company/brand name),',
+  '"origin" (country of origin),',
+  '"region" (region, farm, co-op or producer),',
+  '"process" (one of Washed, Natural, Honey, Anaerobic, Wet-Hulled, Carbonic Maceration, Other),',
+  '"varietal", "roast_level" (one of Light, Medium-Light, Medium, Medium-Dark, Dark),',
+  '"roast_date" (YYYY-MM-DD), "weight_g" (net weight in grams, digits only),',
+  '"flavor_notes" (array of short tasting-note strings printed on the bag),',
+  '"brew_method" (only if the bag explicitly names one, e.g. "Espresso").',
+  '',
+  'Transcribe only what is actually legible on the packaging. Use null for anything not',
+  'printed on the bag or that you cannot read with confidence — do not infer, guess or',
+  'fill in from general knowledge of the roaster. An empty array is fine for flavor_notes.',
+  'If the weight is printed in ounces, convert to grams and round to the nearest whole number.',
+].join(' ');
 
 /* Google has moved image generation from `models/{m}:generateContent` to the
    Interactions API, and the response shape differs between them (and has
@@ -572,6 +607,119 @@ async function openaiRender(cfg, blob) {
   const b64 = json?.data?.[0]?.b64_json;
   if (!b64) throw new Error('No image in response');
   return dataURLToBlob(`data:image/png;base64,${b64}`);
+}
+
+/* ================= read the label ================= */
+
+const READ_MODELS = { gemini: 'gemini-3.1-flash', openai: 'gpt-4.1-mini' };
+
+function parseLabelJSON(text) {
+  if (!text) throw new Error('The model returned nothing');
+  const cleaned = text.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end < 0) throw new Error('Could not read the label');
+  const raw = JSON.parse(cleaned.slice(start, end + 1));
+
+  const clean = (v) => {
+    if (v == null) return '';
+    const s = String(v).trim();
+    return /^(null|n\/a|none|unknown|not visible)$/i.test(s) ? '' : s;
+  };
+  return {
+    name: clean(raw.name),
+    roaster: clean(raw.roaster),
+    origin: clean(raw.origin),
+    region: clean(raw.region),
+    process: clean(raw.process),
+    varietal: clean(raw.varietal),
+    roast_level: clean(raw.roast_level),
+    roast_date: /^\d{4}-\d{2}-\d{2}$/.test(clean(raw.roast_date)) ? clean(raw.roast_date) : '',
+    weight_g: clean(raw.weight_g).replace(/[^\d]/g, ''),
+    brew_method: clean(raw.brew_method),
+    flavor_notes: Array.isArray(raw.flavor_notes)
+      ? raw.flavor_notes.map(clean).filter(Boolean).slice(0, 8)
+      : [],
+  };
+}
+
+/**
+ * Transcribe the bag's label into form fields. Needs an API key.
+ * @returns {Promise<object>} partial bean fields; '' for anything unreadable
+ */
+export async function readBagLabel(img) {
+  const cfg = getImageAPIConfig();
+  if (!cfg) throw new Error('Add an image API key in Settings to read labels');
+
+  const small = fit(img, 1024);
+  const blob = await canvasToBlob(small, 'image/jpeg', 0.9);
+  const b64 = (await blobToDataURL(blob)).split(',')[1];
+
+  if (cfg.provider === 'openai') {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}` },
+      body: JSON.stringify({
+        model: READ_MODELS.openai,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: READ_LABEL_PROMPT },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
+          ],
+        }],
+        response_format: { type: 'json_object' },
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error?.message || `OpenAI error ${res.status}`);
+    return parseLabelJSON(json?.choices?.[0]?.message?.content);
+  }
+
+  const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key };
+  const model = READ_MODELS.gemini;
+
+  // Interactions first, generateContent as the fallback — same as the renderer.
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        input: [
+          { type: 'text', text: READ_LABEL_PROMPT },
+          { type: 'image', mime_type: 'image/jpeg', data: b64 },
+        ],
+      }),
+    });
+    const json = await res.json();
+    if (res.ok) return parseLabelJSON(findText(json));
+    if (res.status !== 404 && res.status !== 400) {
+      throw new Error(json?.error?.message || `Gemini error ${res.status}`);
+    }
+  } catch (err) {
+    if (/Could not read the label|returned nothing/.test(err.message || '')) throw err;
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: READ_LABEL_PROMPT },
+            { inline_data: { mime_type: 'image/jpeg', data: b64 } },
+          ],
+        }],
+        generationConfig: { responseMimeType: 'application/json' },
+      }),
+    }
+  );
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error?.message || `Gemini error ${res.status}`);
+  return parseLabelJSON(findText(json));
 }
 
 /** Render via the configured API, then normalise to OUT_W x OUT_H. */

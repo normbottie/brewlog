@@ -21,6 +21,7 @@ const SHELL_FILES = [
   './js/radar.js',
   './js/ui.js',
   './js/seed.js',
+  './js/places.js',
   './js/views/beans.js',
   './js/views/bean-detail.js',
   './js/views/bean-edit.js',
@@ -58,7 +59,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(request.url);
 
   // never cache API traffic
-  if (/supabase\.co|googleapis\.com|api\.openai\.com|nominatim/.test(url.hostname)) return;
+  if (/supabase\.co|googleapis\.com|api\.openai\.com|nominatim|overpass/.test(url.hostname)) return;
 
   // map tiles: cache-first, capped
   if (/tile\.openstreetmap\.org$/.test(url.hostname)) {
