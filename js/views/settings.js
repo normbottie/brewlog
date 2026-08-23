@@ -6,17 +6,52 @@ import {
   PROVIDERS, getImageAPIConfig, setImageAPIConfig, clearImageAPIConfig,
 } from '../imaging.js';
 import { h, esc, toast, confirmSheet } from '../ui.js';
+import { signIn, signOut, currentUser, isSignedIn, redirectURL } from '../auth.js';
 import { seedDemoData } from '../seed.js';
 
 export async function render(root) {
   const cfg = sb.getConfig();
   const img = getImageAPIConfig();
+  const user = currentUser();
   const beans = await listBeans();
   const cafes = await listCafes();
 
   const view = h(`<div>
     <div class="topbar"><div><h1>Settings</h1><div class="sub">Sync, rendering, backup</div></div></div>
     <div class="view">
+
+      <h2 class="section">Account</h2>
+      <div class="glass card-pad">
+        ${isSignedIn() ? `
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <div class="avatar" style="width:42px;height:42px;border-radius:13px;display:grid;
+                 place-items:center;font-weight:700;color:#1B1410;
+                 background:linear-gradient(163deg,var(--tan-bright),#A98A62)">
+              ${esc((user?.email || '?').charAt(0).toUpperCase())}
+            </div>
+            <div style="min-width:0">
+              <div style="font-weight:600">Signed in</div>
+              <div class="hint" style="margin:0;overflow:hidden;text-overflow:ellipsis">${esc(user?.email || '')}</div>
+            </div>
+          </div>
+          <button class="btn-block" data-signout>Sign out</button>
+          <div class="hint" style="margin-top:10px">
+            Signing out leaves this device's data in place; it stops syncing until you sign back in.
+          </div>
+        ` : `
+          <div class="hint" style="margin-bottom:13px">
+            Sign in to sync your log across devices. No password — we email you a
+            link that signs you in and keeps you signed in.
+          </div>
+          <div class="field">
+            <label for="s-email">Email</label>
+            <input id="s-email" data-email type="email" inputmode="email"
+                   autocomplete="email" placeholder="you@example.com">
+          </div>
+          <button class="btn-primary btn-block" data-signin>Email me a link</button>
+          <div class="hint" data-authstatus style="margin-top:10px"></div>
+        `}
+      </div>
 
       <h2 class="section">Sync</h2>
       <div class="glass card-pad">
@@ -33,8 +68,9 @@ export async function render(root) {
           <input id="s-key" data-key type="password" placeholder="eyJhbGciOi…" value="${esc(cfg?.key || '')}">
         </div>
         <div class="hint" style="margin-bottom:13px">
-          Stored on this device only. Run <code>schema.sql</code> in the Supabase SQL editor first,
-          and create a public storage bucket named <code>bag-images</code>.
+          Stored on this device only. Run <code>schema.sql</code> in the Supabase SQL editor first.
+          Then in Authentication → URL Configuration, add
+          <code>${esc(redirectURL())}</code> to the redirect allow-list so magic links come back here.
         </div>
         <div style="display:flex;gap:9px">
           <button class="btn-primary" style="flex:1" data-save-sb>Save &amp; test</button>
@@ -46,9 +82,8 @@ export async function render(root) {
       <h2 class="section">Bag photo rendering</h2>
       <div class="glass card-pad">
         <div class="hint" style="margin-bottom:13px">
-          Without a key, bags are cut out on-device and composited onto a shared backdrop —
-          free and offline. Add your own key for a full studio re-render (a few cents per photo,
-          billed to you).
+          Without a key, the bag photo is used as-is. Add your own key to re-render it
+          as a studio product shot (a few cents per photo, billed to you).
         </div>
         <div class="field">
           <label for="s-prov">Provider</label>
@@ -115,6 +150,37 @@ export async function render(root) {
       <div class="hint" style="text-align:center">Brewlog · local-first · v1.0</div>
     </div>
   </div>`);
+
+  /* --- account --- */
+  const authStatus = view.querySelector('[data-authstatus]');
+  view.querySelector('[data-signin]')?.addEventListener('click', async (e) => {
+    if (!sb.isConfigured()) {
+      authStatus.textContent = 'Add your Supabase URL and key below first.';
+      return;
+    }
+    const btn = e.currentTarget;
+    const email = view.querySelector('[data-email]').value;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Sending…';
+    try {
+      const sent = await signIn(email);
+      authStatus.textContent =
+        `Link sent to ${sent}. Open it on this device — it expires in about an hour.`;
+    } catch (err) {
+      authStatus.textContent = err.message || 'Could not send the link';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Email me a link';
+    }
+  });
+
+  view.querySelector('[data-signout]')?.addEventListener('click', async () => {
+    if (await confirmSheet('Sign out?', 'Your beans and cafes stay on this device. Syncing stops until you sign back in.', 'Sign out')) {
+      await signOut();
+      toast('Signed out');
+      location.reload();
+    }
+  });
 
   /* --- supabase --- */
   view.querySelector('[data-save-sb]').onclick = async (e) => {

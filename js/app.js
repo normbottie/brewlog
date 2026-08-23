@@ -1,7 +1,8 @@
 /* Router + shell. */
 
-import { icon } from './ui.js';
+import { icon, toast } from './ui.js';
 import { queueSync, onSyncChange, syncState } from './store.js';
+import { captureSession } from './auth.js';
 
 import * as Beans from './views/beans.js';
 import * as BeanDetail from './views/bean-detail.js';
@@ -46,7 +47,23 @@ const ROUTES = [
 
 let current = null;
 
+function looksLikeAuthCallback() {
+  const hash = location.hash.slice(1);
+  return /(^|&)(access_token|error_description|error)=/.test(hash);
+}
+
 async function route() {
+  /* Also handle the callback here, not just on load: if the app is already
+     open when the hash changes, the initial captureSession() has long since
+     run and the tokens would otherwise be routed as an unknown page. */
+  if (looksLikeAuthCallback()) {
+    try {
+      if (await captureSession()) toast('Signed in');
+    } catch (err) {
+      toast(err.message || 'Sign-in failed', 6000);
+    }
+  }
+
   const hash = location.hash || '#/beans';
   let match = null;
   for (const [re, fn] of ROUTES) {
@@ -96,5 +113,12 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-route();
-queueSync(1200);
+/* A magic-link redirect lands with the session in the URL fragment, which is
+   also where the router looks — so consume it before routing. */
+captureSession()
+  .then(ok => { if (ok) toast('Signed in'); })
+  .catch(err => { toast(err.message || 'Sign-in failed', 6000); })
+  .finally(() => {
+    route();
+    queueSync(1200);
+  });

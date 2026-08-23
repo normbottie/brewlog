@@ -27,10 +27,19 @@ export function clearConfig() {
 
 export function isConfigured() { return !!getConfig(); }
 
-function headers(cfg, extra = {}) {
+/* Requests are made as the signed-in user when there is one, so row-level
+   security scopes every read and write to that account. Falls back to the
+   anon key, which the policies then reject — that is the intended behaviour
+   once auth is on. */
+let tokenProvider = async () => null;
+export function setTokenProvider(fn) { tokenProvider = fn; }
+
+async function headers(cfg, extra = {}) {
+  let token = null;
+  try { token = await tokenProvider(); } catch {}
   return {
     apikey: cfg.key,
-    Authorization: `Bearer ${cfg.key}`,
+    Authorization: `Bearer ${token || cfg.key}`,
     ...extra,
   };
 }
@@ -52,7 +61,7 @@ export async function selectSince(table, since) {
   if (!cfg) return [];
   const q = new URLSearchParams({ select: '*', order: 'updated_at.asc' });
   if (since) q.set('updated_at', `gte.${since}`);
-  const res = await fetch(`${cfg.url}/rest/v1/${table}?${q}`, { headers: headers(cfg) });
+  const res = await fetch(`${cfg.url}/rest/v1/${table}?${q}`, { headers: await headers(cfg) });
   return (await jsonOrThrow(res)) || [];
 }
 
@@ -62,7 +71,7 @@ export async function upsert(table, rows) {
   if (!cfg || !rows.length) return null;
   const res = await fetch(`${cfg.url}/rest/v1/${table}`, {
     method: 'POST',
-    headers: headers(cfg, {
+    headers: await headers(cfg, {
       'Content-Type': 'application/json',
       Prefer: 'resolution=merge-duplicates,return=minimal',
     }),
@@ -79,7 +88,7 @@ export async function uploadImage(path, blob) {
     `${cfg.url}/storage/v1/object/${BUCKET}/${encodeURI(path)}`,
     {
       method: 'POST',
-      headers: headers(cfg, {
+      headers: await headers(cfg, {
         'Content-Type': blob.type || 'image/jpeg',
         'x-upsert': 'true',
       }),
@@ -100,7 +109,7 @@ export async function downloadImage(url) {
 export async function testConnection() {
   const cfg = getConfig();
   if (!cfg) throw new Error('Not configured');
-  const res = await fetch(`${cfg.url}/rest/v1/beans?select=id&limit=1`, { headers: headers(cfg) });
+  const res = await fetch(`${cfg.url}/rest/v1/beans?select=id&limit=1`, { headers: await headers(cfg) });
   if (res.status === 404) throw new Error('Connected, but the `beans` table is missing — run schema.sql');
   await jsonOrThrow(res);
   return true;

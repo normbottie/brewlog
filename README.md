@@ -34,27 +34,37 @@ The repo includes `.nojekyll` so GitHub serves the files as-is.
 
 ---
 
-## Sync (Supabase)
+## Accounts and sync (Supabase)
 
 The app is local-first: everything is stored in IndexedDB on the device and
-works with no account and no network. Supabase is optional, and adds sync
-across devices plus off-device backup of the bag photos.
+works with no account and no network. Signing in adds sync across devices and
+off-device backup of the bag photos.
 
 1. Create a project at supabase.com (free tier is plenty).
-2. SQL Editor → paste `schema.sql` → Run. This creates the `beans` and
-   `cafes` tables and a public `bag-images` storage bucket.
+2. SQL Editor → paste `schema.sql` → Run. This creates the `beans` and `cafes`
+   tables scoped to each account, the row-level security policies, and the
+   `bag-images` storage bucket.
 3. Settings → API → copy the **Project URL** and the **anon public** key.
-4. In the app: Settings → Sync → paste both → **Save & test**.
+4. Authentication → URL Configuration → add your app's address to **Redirect
+   URLs**, e.g. `https://<you>.github.io/brewlog/`. Magic links will not come
+   back to the app without this.
+5. In the app: Settings → Sync → paste the URL and key → **Save & test**.
+6. Settings → Account → enter your email → **Email me a link** → open the link
+   on that device. You stay signed in afterwards; repeat once per device.
 
 Sync is last-write-wins on `updated_at`, and pushes queue up while offline.
 
-**About the security model.** `schema.sql` grants the anon key full read and
-write on those two tables, which is what lets the app sync with no login
-screen. That is a reasonable trade for a private personal app, but it does
-mean anyone who gets the key can read and write your log. Do not paste the
-key into a shared machine, and if you ever want to share the app itself,
-switch to Supabase Auth and change the `using (true)` policies to
-`using (auth.uid() = user_id)`.
+**Security model.** Sign-in is a passwordless magic link. Every row carries a
+`user_id`, and the policies only ever match `auth.uid() = user_id`, so accounts
+cannot see each other's logs and the anon key on its own grants nothing. Bag
+images live at `bag-images/<user-id>/<bean-id>.jpg`; the bucket is public for
+reads so a plain `<img>` tag works, which means someone who guessed a full URL
+could view that one image. To close that off, make the bucket private and
+switch `beanImageURL()` to signed URLs.
+
+If you used the earlier shared-key schema, re-running `schema.sql` drops those
+policies and adopts your existing rows into your account — sign in through the
+app once first so the account exists.
 
 ---
 
@@ -62,20 +72,22 @@ switch to Supabase Auth and change the `using (true)` policies to
 
 Two paths, both producing the same 1080×1350 4:5 frame so every card lines up.
 
-**On-device (default, free, offline).** The photo is matted by flood-filling
-inward from the frame edges, which finds the wall behind the bag. The bag is
-cut out, scaled to a fixed position, and composited onto one of three shared
-backdrops with a contact shadow and a soft reflection.
+**Photo (default, free, offline).** The photo itself, cover-cropped to the
+shared frame. Nothing added or removed.
 
-It works best when the bag is upright against a plain-ish wall with a bit of
-separation. Busy backgrounds confuse it — the app always offers a **Plain**
-variant (same framing, no cutout) as a fallback, and refuses the cutout
-automatically if the mask looks wrong.
+**AI studio (optional).** Settings → Bag photo rendering → paste a key from
+Google (Gemini) or OpenAI. An **AI studio** option then appears when you add a
+bag: the photo goes to the model, which re-shoots it as a three-quarter product
+shot on the espresso backdrop, with the side gusset blanked to a flat colour.
+Costs a few cents per image, billed to you.
 
-**API render (optional).** Settings → Bag photo rendering → paste a key from
-Google (Gemini) or OpenAI. An **AI studio** option then appears when you add
-a bag, which sends the photo to the model and asks for a real studio
-re-render. Costs a few cents per image, billed to you.
+The prompt is emphatic about reproducing the label exactly and inventing
+nothing, but image models are unreliable with small text — check a render
+against the bag before saving it.
+
+**Reading the label.** With the same key, **Read the label** transcribes the
+bag and fills in any fields you have left empty. It never overwrites what you
+have typed, and is told to leave a field blank rather than guess.
 
 The key is kept in this browser's local storage and sent only to the provider
 you picked. A static site cannot hide a key, so anyone with access to the
@@ -86,16 +98,25 @@ the device is shared.
 
 ## Cafes
 
-Leaflet plus OpenStreetMap tiles — free, no key, no billing account. Tap the
-map to drop a pin, or use **+** and type an address (geocoded via Nominatim).
+Leaflet plus OpenStreetMap tiles — free, no key, no billing account.
+
+**Near me** finds cafes around you via the Overpass API, marking any you have
+already rated; **This map area** does the same for wherever the map is centred,
+which is the fallback when location permission is off. Or tap the map to drop a
+draggable pin, or use **+** to search an address (geocoded via Nominatim).
 Five-star rating, notes, and a link out to directions.
+
+Coverage is community-sourced: thorough in cities, patchier than Google in
+suburbs. Google Places would be free at this volume (10k map loads and 5k
+searches a month) but needs a billing account and a referrer-locked key, which
+is a poor fit for a public static site.
 
 ---
 
 ## Project layout
 
 ```
-index.html          shell, icon sprite
+index.html          app shell
 manifest.json       PWA manifest
 sw.js               service worker (app shell + map tile cache)
 schema.sql          Supabase tables, policies, storage bucket
@@ -105,13 +126,15 @@ js/
   store.js          domain model, local-first store, sync engine
   idb.js            IndexedDB wrapper
   supabase.js       REST + Storage client
-  imaging.js        matting, studio composite, API renders
+  imaging.js        framing, API renders, label transcription
+  auth.js           Supabase magic-link auth
+  places.js         nearby cafes via OpenStreetMap Overpass
   radar.js          tasting radar SVG
   ui.js             DOM helpers, sheets, stars, toasts
   seed.js           sample data
   views/            one module per screen
 vendor/             Leaflet 1.9.4, vendored so the app works offline
-test/               Playwright screenshot + imaging checks
+test/               Playwright checks (views, edit flow, auth, imaging)
 ```
 
 ## Tests
@@ -119,7 +142,9 @@ test/               Playwright screenshot + imaging checks
 ```bash
 python3 -m http.server 8899 &
 node test/shots.mjs      # screenshots every view, reports console errors
-node test/imaging.mjs    # runs the cutout pipeline on three synthetic bags
+node test/edit.mjs       # the edit-an-existing-bag image flow
+node test/auth.mjs       # sign-in UI and magic-link callback handling
+node test/imaging.mjs    # the local framing pipeline on synthetic bags
 ```
 
 Output lands in `test/shots/`.
