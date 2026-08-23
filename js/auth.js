@@ -87,21 +87,22 @@ export async function verifyCode(email, code) {
   const token = String(code || '').replace(/\D/g, '');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('Enter the email the code was sent to');
   if (token.length !== 6) throw new Error('The code is 6 digits');
-  let payload;
-  try {
-    payload = await authFetch('verify', {
-      method: 'POST',
-      body: JSON.stringify({ type: 'email', email: clean, token }),
-    });
-  } catch (first) {
-    // older projects verify magic-link OTPs under the legacy type
+  /* 'email' is the modern unified type; 'magiclink' and 'signup' are the
+     legacy types for returning and first-time users respectively. */
+  let payload = null;
+  let firstErr = null;
+  for (const type of ['email', 'magiclink', 'signup']) {
     try {
       payload = await authFetch('verify', {
         method: 'POST',
-        body: JSON.stringify({ type: 'magiclink', email: clean, token }),
+        body: JSON.stringify({ type, email: clean, token }),
       });
-    } catch { throw first; }
+      break;
+    } catch (err) {
+      firstErr = firstErr || err;
+    }
   }
+  if (!payload) throw firstErr;
   const next = shape(payload);
   next.user = payload.user || await fetchUser(next.access_token);
   store(next);
