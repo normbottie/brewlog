@@ -14,9 +14,21 @@ export function getConfig() {
   } catch { return null; }
 }
 
+/** Accepts the real API URL, or a pasted dashboard URL, or just the ref. */
+export function normalizeProjectURL(url) {
+  let u = (url || '').trim().replace(/\/+$/, '');
+  // https://supabase.com/dashboard/project/<ref>/... -> https://<ref>.supabase.co
+  const dash = /supabase\.(?:com|green)\/dashboard\/project\/([a-z0-9]{15,25})/i.exec(u);
+  if (dash) return `https://${dash[1].toLowerCase()}.supabase.co`;
+  // a bare project ref
+  if (/^[a-z0-9]{15,25}$/i.test(u)) return `https://${u.toLowerCase()}.supabase.co`;
+  if (u && !/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u;
+}
+
 export function setConfig(url, key) {
   try {
-    localStorage.setItem(LS_URL, (url || '').trim().replace(/\/+$/, ''));
+    localStorage.setItem(LS_URL, normalizeProjectURL(url));
     localStorage.setItem(LS_KEY, (key || '').trim());
   } catch { /* private mode */ }
 }

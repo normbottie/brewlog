@@ -76,6 +76,7 @@ export async function render(root) {
           <button class="btn-primary" style="flex:1" data-save-sb>Save &amp; test</button>
           <button style="flex:0 0 auto" data-sync-now>Sync now</button>
         </div>
+        <div class="hint" data-sbstatus style="margin-top:10px"></div>
         ${cfg ? `<button class="btn-ghost btn-block btn-sm" data-clear-sb style="margin-top:9px">Disconnect</button>` : ''}
       </div>
 
@@ -183,23 +184,33 @@ export async function render(root) {
   });
 
   /* --- supabase --- */
+  const sbStatus = view.querySelector('[data-sbstatus]');
   view.querySelector('[data-save-sb]').onclick = async (e) => {
     const btn = e.currentTarget;
-    sb.setConfig(view.querySelector('[data-url]').value, view.querySelector('[data-key]').value);
+    const rawURL = view.querySelector('[data-url]').value;
+    sb.setConfig(rawURL, view.querySelector('[data-key]').value);
+    const cleaned = sb.getConfig()?.url || '';
+    // show the correction when a dashboard URL or bare ref was pasted
+    if (cleaned && cleaned !== rawURL.trim().replace(/\/+$/, '')) {
+      view.querySelector('[data-url]').value = cleaned;
+    }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Testing…';
+    sbStatus.textContent = '';
     try {
       await sb.testConnection();
+      sbStatus.textContent = '✓ Connected. Tables found.';
       toast('Connected');
       await sync();
     } catch (err) {
-      toast(err.message || 'Could not connect');
+      // persistent, so it can actually be read
+      sbStatus.textContent = err.message || 'Could not connect';
     } finally {
       btn.disabled = false; btn.textContent = 'Save & test';
     }
   };
   view.querySelector('[data-sync-now]').onclick = async () => {
     const ok = await sync();
-    toast(ok ? 'Synced' : syncState.message);
+    sbStatus.textContent = ok ? '✓ Synced.' : syncState.message;
   };
   view.querySelector('[data-clear-sb]')?.addEventListener('click', async () => {
     if (await confirmSheet('Disconnect Supabase?', 'Your data stays on this device. Sync stops until you reconnect.', 'Disconnect')) {
