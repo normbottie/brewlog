@@ -7,6 +7,7 @@ import {
 } from '../imaging.js';
 import { h, esc, toast, confirmSheet } from '../ui.js';
 import { signIn, signOut, currentUser, isSignedIn, redirectURL } from '../auth.js';
+import { GEMINI_PROXY } from '../config.js';
 import { seedDemoData } from '../seed.js';
 
 export async function render(root) {
@@ -83,8 +84,12 @@ export async function render(root) {
       <h2 class="section">Bag photo rendering</h2>
       <div class="glass card-pad">
         <div class="hint" style="margin-bottom:13px">
-          Without a key, the bag photo is used as-is. Add your own key to re-render it
-          as a studio product shot (a few cents per photo, billed to you).
+          ${GEMINI_PROXY
+            ? `Rendering and label reading are built in through your account — nothing to
+               set up. Adding a personal key below overrides the built-in one (for your
+               own billing, or to use OpenAI instead).`
+            : `Without a key, the bag photo is used as-is. Add your own key to re-render
+               it as a studio product shot (a few cents per photo, billed to you).`}
         </div>
         <div class="field">
           <label for="s-prov">Provider</label>

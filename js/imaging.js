@@ -8,6 +8,10 @@
       model and ask for a real studio render.
 */
 
+import { accessToken } from './auth.js';
+import { getConfig as supabaseConfig } from './supabase.js';
+import { GEMINI_PROXY } from './config.js';
+
 export const OUT_W = 1080;
 export const OUT_H = 1350;          // 4:5
 
@@ -435,6 +439,32 @@ const LS_PROVIDER = 'brewlog.img.provider';
 const LS_KEY = 'brewlog.img.key';
 const LS_MODEL = 'brewlog.img.model';
 
+/* All Gemini traffic goes through here: a personal key talks to Google
+   directly; otherwise the request is routed through the gemini-proxy Edge
+   Function, which injects the shared key server-side. */
+async function geminiFetch(path, init = {}) {
+  const local = getImageAPIConfig();
+  if (local?.key && local.provider !== 'openai') {
+    return fetch('https://generativelanguage.googleapis.com' + path, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': local.key, ...(init.headers || {}) },
+    });
+  }
+  if (!GEMINI_PROXY) throw new Error('Add an image API key in Settings');
+  const cfg = supabaseConfig();
+  const tok = await accessToken();
+  if (!cfg || !tok) throw new Error('Sign in to use AI features');
+  return fetch(`${cfg.url}/functions/v1/gemini-proxy?path=${encodeURIComponent(path)}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${tok}`,
+      apikey: cfg.key,
+      ...(init.headers || {}),
+    },
+  });
+}
+
 export const PROVIDERS = {
   gemini: {
     label: 'Google Gemini',
@@ -466,7 +496,7 @@ export function clearImageAPIConfig() {
   try { [LS_PROVIDER, LS_KEY, LS_MODEL].forEach(k => localStorage.removeItem(k)); } catch {}
 }
 
-export const hasImageAPI = () => !!getImageAPIConfig();
+export const hasImageAPI = () => !!getImageAPIConfig() || GEMINI_PROXY;
 
 export const STUDIO_PROMPT = [
   'Re-photograph this exact coffee bag as a clean e-commerce product shot.',
@@ -566,19 +596,17 @@ function findText(node, depth = 0) {
   return '';
 }
 
-async function geminiRender(cfg, blob, prompt) {
+async function geminiRender(model, blob, prompt) {
   const b64 = (await blobToDataURL(blob)).split(',')[1];
   const mime = blob.type || 'image/jpeg';
-  const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key };
 
   /* 1. Interactions API — current path for the Nano Banana models. */
   let firstError = '';
   try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    const res = await geminiFetch('/v1beta/interactions', {
       method: 'POST',
-      headers,
       body: JSON.stringify({
-        model: cfg.model,
+        model,
         input: [
           { type: 'text', text: prompt },
           { type: 'image', mime_type: mime, data: b64 },
@@ -603,21 +631,17 @@ async function geminiRender(cfg, blob, prompt) {
   }
 
   /* 2. Legacy generateContent — still works for gemini-2.5-flash-image. */
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mime, data: b64 } },
-          ],
-        }],
-      }),
-    }
-  );
+  const res = await geminiFetch(`/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: mime, data: b64 } },
+        ],
+      }],
+    }),
+  });
   const json = await res.json();
   if (!res.ok) {
     throw new Error(json?.error?.message || firstError || `Gemini error ${res.status}`);
@@ -681,10 +705,7 @@ async function pickReadModel(cfg) {
   } catch {}
 
   try {
-    const res = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
-      { headers: { 'x-goog-api-key': cfg.key } }
-    );
+    const res = await geminiFetch('/v1beta/models?pageSize=200');
     if (res.ok) {
       const json = await res.json();
       const usable = (json.models || [])
@@ -745,7 +766,7 @@ function parseLabelJSON(text) {
  */
 export async function readBagLabel(img) {
   const cfg = getImageAPIConfig();
-  if (!cfg) throw new Error('Add an image API key in Settings to read labels');
+  if (!cfg && !GEMINI_PROXY) throw new Error('Add an image API key in Settings to read labels');
 
   const small = fit(img, 1024);
   const blob = await canvasToBlob(small, 'image/jpeg', 0.9);
@@ -772,8 +793,6 @@ export async function readBagLabel(img) {
     return parseLabelJSON(json?.choices?.[0]?.message?.content);
   }
 
-  const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key };
-
   /* Try the discovered model, then each fallback, across both endpoints.
      A "model not found" is worth retrying with another name; anything else
      (bad key, quota, safety block) is reported straight away. */
@@ -786,9 +805,8 @@ export async function readBagLabel(img) {
       let res, json;
       try {
         if (endpoint === 'interactions') {
-          res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+          res = await geminiFetch('/v1beta/interactions', {
             method: 'POST',
-            headers,
             body: JSON.stringify({
               model,
               input: [
@@ -798,22 +816,18 @@ export async function readBagLabel(img) {
             }),
           });
         } else {
-          res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-            {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { text: READ_LABEL_PROMPT },
-                    { inline_data: { mime_type: 'image/jpeg', data: b64 } },
-                  ],
-                }],
-                generationConfig: { responseMimeType: 'application/json' },
-              }),
-            }
-          );
+          res = await geminiFetch(`/v1beta/models/${model}:generateContent`, {
+            method: 'POST',
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: READ_LABEL_PROMPT },
+                  { inline_data: { mime_type: 'image/jpeg', data: b64 } },
+                ],
+              }],
+              generationConfig: { responseMimeType: 'application/json' },
+            }),
+          });
         }
         json = await res.json();
       } catch (err) {
@@ -848,16 +862,16 @@ export const RENDER_BACKDROP = 'espresso';
 
 export async function apiStudio(img, opts = {}) {
   const cfg = getImageAPIConfig();
-  if (!cfg) throw new Error('No image API key configured');
+  if (!cfg && !GEMINI_PROXY) throw new Error('No image API key configured');
   const prompt = studioPrompt(opts.backdrop || RENDER_BACKDROP);
 
   // send a reasonably sized copy, not the full 12MP phone photo
   const small = fit(img, 1024);
   const send = await canvasToBlob(small, 'image/jpeg', 0.88);
 
-  const result = cfg.provider === 'openai'
+  const result = cfg?.provider === 'openai'
     ? await openaiRender(cfg, send, prompt)
-    : await geminiRender(cfg, send, prompt);
+    : await geminiRender(cfg?.model || PROVIDERS.gemini.defaultModel, send, prompt);
 
   const rendered = await fileToImage(result);
   const out = document.createElement('canvas');

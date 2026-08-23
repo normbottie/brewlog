@@ -67,7 +67,9 @@ export function render(root) {
       status.textContent = `Sent to ${sent}. Type the 6-digit code below, or tap the link if the email opens here.`;
       codeEl.focus();
     } catch (err) {
-      status.textContent = err.message || 'Could not send the email';
+      status.textContent = /sign.?ups?.*(disabled|not allowed)/i.test(err.message || '')
+        ? 'This log is invite-only — ask Norm to add your email, then try again.'
+        : (err.message || 'Could not send the email');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Email me a sign-in code';
