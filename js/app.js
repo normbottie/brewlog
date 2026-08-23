@@ -113,6 +113,54 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+/* ---- pull to refresh ----------------------------------------------
+   The installed app has no browser chrome, so there is no reload button.
+   Pull down from the top of any page to refresh (which also syncs). */
+(function () {
+  const ptr = document.createElement('div');
+  ptr.id = 'ptr';
+  ptr.setAttribute('aria-hidden', 'true');
+  ptr.innerHTML = '<div class="disc"><span class="spinner"></span></div>';
+  document.body.appendChild(ptr);
+
+  const ARM = 150;        // raw finger travel, px
+  let y0 = -1;
+  let dist = 0;
+
+  document.addEventListener('touchstart', (e) => {
+    dist = 0;
+    const t = e.target;
+    // never fight the map, sheets, sliders, or a scrolled page
+    const excluded = typeof t.closest === 'function' &&
+      t.closest('#map, .leaflet-container, .sheet-backdrop, input[type="range"], textarea');
+    y0 = (window.scrollY <= 0 && !excluded) ? e.touches[0].clientY : -1;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (y0 < 0) return;
+    dist = e.touches[0].clientY - y0;
+    if (dist <= 12 || window.scrollY > 0) {
+      ptr.classList.remove('show', 'armed');
+      return;
+    }
+    const d = Math.min(dist, ARM * 1.35);
+    ptr.style.setProperty('--pull', (d * 0.5).toFixed(1) + 'px');
+    ptr.classList.add('show');
+    ptr.classList.toggle('armed', dist > ARM);
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (y0 >= 0 && dist > ARM) {
+      ptr.classList.add('loading');
+      setTimeout(() => location.reload(), 180);
+    } else {
+      ptr.classList.remove('show', 'armed');
+    }
+    y0 = -1;
+    dist = 0;
+  });
+})();
+
 /* A magic-link redirect lands with the session in the URL fragment, which is
    also where the router looks — so consume it before routing. */
 captureSession()

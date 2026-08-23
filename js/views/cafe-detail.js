@@ -88,8 +88,8 @@ export async function render(root, id) {
   let map = null;
   if (hasPin && window.L) {
     map = L.map('map', { zoomControl: false, attributionControl: true }).setView([cafe.lat, cafe.lng], 16);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; OpenStreetMap',
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20, subdomains: 'abcd', attribution: '&copy; OpenStreetMap &copy; CARTO',
     }).addTo(map);
     L.marker([cafe.lat, cafe.lng], {
       icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 28] }),

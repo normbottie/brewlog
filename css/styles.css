@@ -46,6 +46,7 @@ html, body {
   height: 100%;
   overscroll-behavior-y: none;
 }
+html { background: #171310; }
 
 body {
   background: var(--espresso);
@@ -543,8 +544,6 @@ input[type=range]::-moz-range-thumb {
   background: #14100D;
   z-index: 0;
 }
-/* tint OSM tiles to match the coffee theme */
-.leaflet-tile-pane { filter: invert(1) hue-rotate(186deg) brightness(.78) contrast(.92) saturate(.62) sepia(.28); }
 .leaflet-container { background: #14100D !important; font: inherit !important; }
 .leaflet-control-attribution {
   background: rgba(16,13,11,.76) !important;
@@ -708,6 +707,45 @@ input[type=range]::-moz-range-thumb {
 .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: 0 0 auto; }
 .sync-dot.on  { background: #6FBF9A; box-shadow: 0 0 9px rgba(111,191,154,.75); }
 .sync-dot.err { background: #E9A08E; }
+
+/* installed to the home screen: the browser chrome is gone, so tuck the
+   tab bar down against the home indicator instead of floating above a gap */
+@media (display-mode: standalone) {
+  #tabbar { bottom: max(var(--safe-bottom), 12px); }
+  #app { padding-bottom: calc(var(--safe-bottom) + 84px); }
+}
+
+/* pull-to-refresh disc */
+#ptr {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--safe-top) + 4px);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -58px);
+  transition: transform .25s var(--ease), opacity .2s;
+}
+#ptr.show {
+  opacity: 1;
+  transition: none;
+  transform: translate(-50%, calc(var(--pull, 0px) - 50px));
+}
+#ptr .disc {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(30,24,20,.92);
+  border: 1px solid var(--glass-brd);
+  box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+#ptr .spinner { width: 18px; height: 18px; animation-play-state: paused; }
+#ptr.armed .disc { border-color: rgba(228,199,154,.6); }
+#ptr.armed .spinner { border-top-color: var(--tan-bright); }
+#ptr.loading { transform: translate(-50%, 16px) !important; transition: transform .2s; }
+#ptr.loading .spinner { animation-play-state: running; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
