@@ -1,17 +1,23 @@
 /* Thin Supabase REST + Storage client (no SDK, no build step).
    Configured at runtime from Settings; credentials live in localStorage. */
 
+import { DEFAULT_SUPABASE } from './config.js';
+
 const LS_URL = 'brewlog.supabase.url';
 const LS_KEY = 'brewlog.supabase.key';
 
 export const BUCKET = 'bag-images';
 
 export function getConfig() {
+  let url = '', key = '';
   try {
-    const url = (localStorage.getItem(LS_URL) || '').trim().replace(/\/+$/, '');
-    const key = (localStorage.getItem(LS_KEY) || '').trim();
-    return url && key ? { url, key } : null;
-  } catch { return null; }
+    url = (localStorage.getItem(LS_URL) || '').trim().replace(/\/+$/, '');
+    key = (localStorage.getItem(LS_KEY) || '').trim();
+  } catch {}
+  // fall back to the baked-in project so new devices need no setup
+  url = url || DEFAULT_SUPABASE.url;
+  key = key || DEFAULT_SUPABASE.key;
+  return url && key ? { url, key } : null;
 }
 
 /** Accepts the real API URL, or a pasted dashboard URL, or just the ref. */

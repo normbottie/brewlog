@@ -1,7 +1,7 @@
 /* Settings — sync, image rendering, backup. */
 
 import * as sb from '../supabase.js';
-import { exportJSON, importJSON, sync, syncState, listBeans, listCafes } from '../store.js';
+import { exportJSON, importJSON, sync, syncState, listBeans, listCafes, markSettingsDirty } from '../store.js';
 import {
   PROVIDERS, getImageAPIConfig, setImageAPIConfig, clearImageAPIConfig,
 } from '../imaging.js';
@@ -227,10 +227,12 @@ export async function render(root) {
     const model = view.querySelector('[data-model]').value || PROVIDERS[prov].defaultModel;
     if (!key.trim()) { toast('Paste a key first'); return; }
     setImageAPIConfig(prov, key, model);
+    markSettingsDirty();   // carried to your other devices once signed in
     toast('Key saved — “AI studio” now appears when you add a bag');
   };
   view.querySelector('[data-clear-img]')?.addEventListener('click', () => {
     clearImageAPIConfig();
+    markSettingsDirty();
     toast('Key removed');
     location.reload();
   });

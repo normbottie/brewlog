@@ -23,6 +23,7 @@ const SHELL_FILES = [
   './js/seed.js',
   './js/places.js',
   './js/auth.js',
+  './js/config.js',
   './js/views/beans.js',
   './js/views/bean-detail.js',
   './js/views/bean-edit.js',

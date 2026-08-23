@@ -1,0 +1,15 @@
+/* Baked-in project configuration.
+ *
+ * Shipping the Supabase URL and the anon/publishable key in the source is
+ * safe and is how every Supabase web app works: that key can only do what
+ * row-level security allows, which for this schema is "nothing unless
+ * signed in, and then only your own rows". The security lives in the
+ * database policies, not in hiding this string.
+ *
+ * With both values filled in, a new device needs nothing but the sign-in
+ * email. Values entered in Settings still override these.
+ */
+export const DEFAULT_SUPABASE = {
+  url: 'https://uszcbsovcdzzfxqtzazb.supabase.co',
+  key: '',   // paste the anon / sb_publishable key here
+};

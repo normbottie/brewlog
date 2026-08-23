@@ -5,6 +5,7 @@
 import { idb, metaGet, metaSet, getBlob, putBlob, delBlob } from './idb.js';
 import * as sb from './supabase.js';
 import { accessToken, isSignedIn, userId, onAuthChange } from './auth.js';
+import { getImageAPIConfig, setImageAPIConfig } from './imaging.js';
 
 // every Supabase request goes out as the signed-in user
 sb.setTokenProvider(accessToken);
@@ -181,6 +182,42 @@ function toRemote(rec, owner) {
   return out;
 }
 
+/* App settings (currently the image-API key) sync through the account so a
+   second device gets them after sign-in instead of asking again. */
+const LS_SETTINGS_DIRTY = 'brewlog.settings.dirty';
+
+export function markSettingsDirty() {
+  try { localStorage.setItem(LS_SETTINGS_DIRTY, '1'); } catch {}
+  queueSync(400);
+}
+
+async function syncSettings(owner) {
+  try {
+    let dirty = false;
+    try { dirty = localStorage.getItem(LS_SETTINGS_DIRTY) === '1'; } catch {}
+    const local = getImageAPIConfig();
+
+    if (dirty) {
+      await sb.upsert('settings', [{
+        user_id: owner,
+        data: { img: local },        // null when the key was removed
+        updated_at: new Date().toISOString(),
+      }]);
+      try { localStorage.removeItem(LS_SETTINGS_DIRTY); } catch {}
+      return;
+    }
+
+    if (!local) {
+      const rows = await sb.selectSince('settings', null);
+      const img = rows?.[0]?.data?.img;
+      if (img?.key) {
+        setImageAPIConfig(img.provider, img.key, img.model);
+        document.dispatchEvent(new CustomEvent('brewlog:data'));
+      }
+    }
+  } catch { /* settings table may not exist yet — harmless */ }
+}
+
 let syncTimer = null;
 let syncing = false;
 
@@ -237,6 +274,7 @@ export async function sync() {
         if (watermark) await metaSet(`sync:${table}`, watermark);
       }
     }
+    await syncSettings(owner);
     setState('on', 'Synced');
     document.dispatchEvent(new CustomEvent('brewlog:data'));
     return true;

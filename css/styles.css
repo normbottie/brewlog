@@ -708,11 +708,21 @@ input[type=range]::-moz-range-thumb {
 .sync-dot.on  { background: #6FBF9A; box-shadow: 0 0 9px rgba(111,191,154,.75); }
 .sync-dot.err { background: #E9A08E; }
 
-/* installed to the home screen: the browser chrome is gone, so tuck the
-   tab bar down against the home indicator instead of floating above a gap */
+/* Installed to the home screen: the browser chrome is gone, and a floating
+   pill leaves a dead strip beneath it. Dock the bar to the bottom edge and
+   let its glass run under the home indicator, like a native tab bar. */
 @media (display-mode: standalone) {
-  #tabbar { bottom: max(var(--safe-bottom), 12px); }
-  #app { padding-bottom: calc(var(--safe-bottom) + 84px); }
+  #tabbar {
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    border-radius: 24px 24px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 9px 16px calc(var(--safe-bottom) + 4px);
+  }
+  #app { padding-bottom: calc(var(--safe-bottom) + 96px); }
 }
 
 /* pull-to-refresh disc */

@@ -87,9 +87,24 @@ create policy "own cafes" on public.cafes
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- Per-account app settings (currently the image-API key), so a second
+-- device picks them up after sign-in instead of asking again.
+create table if not exists public.settings (
+  user_id     uuid primary key references auth.users (id) on delete cascade,
+  data        jsonb default '{}'::jsonb,
+  updated_at  timestamptz default now()
+);
+alter table public.settings enable row level security;
+drop policy if exists "own settings" on public.settings;
+create policy "own settings" on public.settings
+  for all to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.beans to authenticated;
 grant select, insert, update, delete on public.cafes to authenticated;
+grant select, insert, update, delete on public.settings to authenticated;
 
 -- ------------------------------------------------------------ migration --
 -- Adopt rows created before accounts existed. Sign in through the app once so
@@ -179,5 +194,5 @@ notify pgrst, 'reload schema';
 
 do $$
 begin
-  raise notice 'Done. Tables: beans, cafes. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
+  raise notice 'Done. Tables: beans, cafes, settings. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
 end $$;
