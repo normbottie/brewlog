@@ -187,6 +187,52 @@ export async function beanImageURL(bean) {
   return url;
 }
 
+/* ---- importing someone else's bag ---------------------------------- */
+
+/* What's printed on the bag comes across; what somebody thought of it does
+   not. Ratings, overall, notes, grind and brew method start blank — the
+   whole point is to record your own findings on the same coffee. Roast date
+   is left out too: their bag is not your bag. */
+const BAG_FIELDS = [
+  'name', 'roaster', 'origin', 'region', 'process', 'varietal',
+  'roast_level', 'weight_g', 'price',
+];
+
+/** An entry of yours that looks like the same coffee, or null. */
+export async function myBeanLike(src) {
+  const norm = (s) => String(s ?? '').trim().toLowerCase();
+  if (!norm(src?.name)) return null;
+  const mine = await listBeans({ shared: false });
+  return mine.find(b =>
+    norm(b.name) === norm(src.name) && norm(b.roaster) === norm(src.roaster)) || null;
+}
+
+/**
+ * Copy a shared bag into your own log, ready for your own tasting notes.
+ * @returns {Promise<object>} the new bean, already saved
+ */
+export async function importBean(sourceId) {
+  const src = await getBean(sourceId);
+  if (!src || src.deleted) throw new Error('That entry is no longer available');
+  if (!isForeign(src)) throw new Error('That entry is already yours');
+
+  const mine = blankBean();
+  BAG_FIELDS.forEach(f => { if (src[f]) mine[f] = src[f]; });
+  // the roaster's printed notes describe the bag, they aren't a verdict on it
+  mine.flavor_notes = Array.isArray(src.flavor_notes) ? [...src.flavor_notes] : [];
+  await save('beans', mine);
+
+  /* Take a copy of the photo rather than pointing at theirs, so your entry
+     keeps working if they re-shoot the bag or stop sharing. */
+  try {
+    const blob = (await getBlob(imgKey(src.id)))
+      || (src.image_url ? await sb.downloadImage(src.image_url) : null);
+    if (blob) await setBeanImage(mine.id, blob);
+  } catch { /* the photo is a nicety — the entry stands without it */ }
+
+  return mine;
+}
+
 /* ---- members & sharing --------------------------------------------- */
 
 /* Rows owned by someone else arrive through sync when that member has opted

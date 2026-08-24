@@ -1,7 +1,10 @@
 /* Single bean — hero shot, radar, details, notes. */
 
-import { getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById } from '../store.js';
-import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace } from '../ui.js';
+import {
+  getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById,
+  importBean, myBeanLike,
+} from '../store.js';
+import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
 import { radarSVG } from '../radar.js';
 
 export async function render(root, id) {
@@ -45,8 +48,12 @@ export async function render(root, id) {
         </div>
       </div>
 
-      ${foreign ? `<div class="read-only-note" style="margin-bottom:16px">
-        ${ownerBadge(owner)} <span>Shared entry — read only</span></div>` : ''}
+      ${foreign ? `<div class="read-only-note" style="margin-bottom:10px">
+          ${ownerBadge(owner)} <span>Shared entry — read only</span></div>
+        <button class="btn-primary btn-block" data-import style="margin-bottom:16px">
+          ${icon('plus')} Log my own
+        </button>
+        <div class="hint" data-importstatus style="margin:-8px 0 16px"></div>` : ''}
 
       ${(b.flavor_notes || []).length ? `
         <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px">
@@ -86,6 +93,50 @@ export async function render(root, id) {
       toast('Deleted');
       goReplace('#/beans');   // don't leave a deleted bean in the back stack
     }
+  });
+
+  /* Copy a shared bag into your own log and go straight to the editor, so
+     the next thing you do is record how it tasted to you. */
+  const importStatus = view.querySelector('[data-importstatus]');
+  const importBtn = view.querySelector('[data-import]');
+
+  async function doImport() {
+    importBtn.disabled = true;
+    importBtn.innerHTML = '<span class="spinner"></span> Adding…';
+    importStatus.textContent = '';
+    try {
+      const mine = await importBean(b.id);
+      toast('Added to your beans');
+      // replace: Back should return to the list, not to their copy
+      goReplace(`#/bean/${mine.id}/edit`);
+    } catch (err) {
+      importStatus.textContent = err.message || 'Could not add that';
+      importBtn.disabled = false;
+      importBtn.innerHTML = `${icon('plus')} Log my own`;
+    }
+  }
+
+  importBtn?.addEventListener('click', async () => {
+    const existing = await myBeanLike(b);
+    if (!existing) return doImport();
+    /* Silently making a second copy is the wrong default — you almost
+       always meant the one you already have. */
+    sheet('You already logged this', (close) => {
+      const node = h(`<div>
+        <p style="color:var(--text-muted);margin:0 0 20px;line-height:1.55">
+          “${esc(existing.name || 'Untitled')}” is already in your beans.
+        </p>
+        <div class="stack">
+          <button class="btn-primary btn-block" data-open>Open mine</button>
+          <button class="btn-block" data-again>Add a second entry</button>
+        </div></div>`);
+      node.querySelector('[data-open]').onclick = () => {
+        close();
+        goReplace(`#/bean/${existing.id}`);
+      };
+      node.querySelector('[data-again]').onclick = () => { close(); doImport(); };
+      return node;
+    });
   });
 
   root.appendChild(view);
