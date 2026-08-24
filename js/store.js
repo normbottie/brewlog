@@ -132,13 +132,22 @@ export async function removeCafe(id) {
 export const imgKey = (beanId) => `bean:${beanId}:studio`;
 export const rawKey = (beanId) => `bean:${beanId}:raw`;
 
-const urlCache = new Map();
+/* Which image_url the cached blob was fetched from. A bean's storage path
+   never changes when you re-shoot it, so without this the first download
+   is cached forever and other devices keep showing the old photo. */
+const imgSrcKey = (beanId) => `imgsrc:${beanId}`;
+
+const urlCache = new Map();   // id -> { url, src }
+
+function releaseURL(beanId) {
+  const c = urlCache.get(beanId);
+  if (c) { URL.revokeObjectURL(c.url); urlCache.delete(beanId); }
+}
 
 export async function setBeanImage(beanId, blob, rawBlob) {
   await putBlob(imgKey(beanId), blob);
   if (rawBlob) await putBlob(rawKey(beanId), rawBlob);
-  const old = urlCache.get(beanId);
-  if (old) { URL.revokeObjectURL(old); urlCache.delete(beanId); }
+  releaseURL(beanId);
   const bean = await getBean(beanId);
   if (bean) { bean._imgDirty = true; await save('beans', bean); }
 }
@@ -151,17 +160,30 @@ export function beanRawBlob(beanId) {
 /** Object URL for a bean's studio shot, pulling from Supabase if needed. */
 export async function beanImageURL(bean) {
   if (!bean) return null;
-  if (urlCache.has(bean.id)) return urlCache.get(bean.id);
+  const src = bean.image_url || '';
+
+  const cached = urlCache.get(bean.id);
+  if (cached && cached.src === src) return cached.url;
+  releaseURL(bean.id);
+
   let blob = await getBlob(imgKey(bean.id));
-  if (!blob && bean.image_url) {
+  /* A local blob that hasn't been pushed yet is always the freshest thing
+     we have. Otherwise it's only good if it came from the current URL. */
+  if (blob && src && !bean._imgDirty) {
+    const from = await metaGet(imgSrcKey(bean.id), null);
+    if (from !== src) blob = null;
+  }
+
+  if (!blob && src) {
     try {
-      blob = await sb.downloadImage(bean.image_url);
+      blob = await sb.downloadImage(src);
       await putBlob(imgKey(bean.id), blob);
-    } catch { return bean.image_url; }
+      await metaSet(imgSrcKey(bean.id), src);
+    } catch { return src; }
   }
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
-  urlCache.set(bean.id, url);
+  urlCache.set(bean.id, { url, src });
   return url;
 }
 
@@ -283,8 +305,22 @@ async function syncSettings(owner) {
   } catch { /* settings table may not exist yet — harmless */ }
 }
 
+/** Drop locally-cached rows belonging to members who no longer share. */
+async function purgeUnshared(table) {
+  const me = userId();
+  if (!me) return;   // without an identity every row looks foreign — never guess
+  const sharers = new Set(profileCache.filter(p => p.share_log).map(p => p.user_id));
+  const rows = await idb.all(table);
+  for (const r of rows) {
+    if (r.user_id && r.user_id !== me && !sharers.has(r.user_id)) {
+      await idb.del(table, r.id);
+    }
+  }
+}
+
 let syncTimer = null;
 let syncing = false;
+let lastSyncAt = 0;
 
 export function queueSync(delay = 1500) {
   if (!sb.isConfigured()) { setState('off', 'Local only'); return; }
@@ -302,6 +338,25 @@ export async function sync() {
   setState('busy', 'Syncing…');
   const owner = userId();
   try {
+    /* Profiles first: who is sharing decides what the row pull can even
+       see, so a stale roster makes the pull below fetch the wrong set. */
+    await pullProfiles();
+
+    /* When someone turns sharing on, their existing rows become visible to
+       us but their updated_at is older than our pull watermark — an
+       incremental fetch would never ask for them, which is why shared
+       entries only appeared after a fresh sign-in. Start over when the
+       roster changes. */
+    const roster = profileCache
+      .filter(p => p.share_log && p.user_id !== owner)
+      .map(p => p.user_id).sort().join(',');
+    const rosterChanged = (await metaGet('sync:roster', null)) !== roster;
+    if (rosterChanged) {
+      await metaSet('sync:beans', null);
+      await metaSet('sync:cafes', null);
+      await metaSet('sync:roster', roster);
+    }
+
     for (const table of ['beans', 'cafes']) {
       /* --- push --- */
       const local = await idb.all(table);
@@ -312,7 +367,12 @@ export async function sync() {
           const blob = await getBlob(imgKey(b.id));
           if (!blob) { delete b._imgDirty; continue; }
           try {
-            b.image_url = await sb.uploadImage(`${owner}/${b.id}.jpg`, blob);
+            const base = await sb.uploadImage(`${owner}/${b.id}.jpg`, blob);
+            /* The path is stable across re-shoots, so stamp a version onto
+               the URL: it busts the storage CDN and gives other devices a
+               way to tell that the photo behind it changed. */
+            b.image_url = `${base}?v=${Date.now().toString(36)}`;
+            await metaSet(imgSrcKey(b.id), b.image_url);
             delete b._imgDirty;
           } catch { /* retry next round */ }
         }
@@ -333,14 +393,20 @@ export async function sync() {
         for (const r of remote) {
           if (!watermark || (r.updated_at || '') > watermark) watermark = r.updated_at;
           const mine = byId.get(r.id);
+          // never let a pull overwrite an edit that hasn't been pushed yet
+          if (mine?._dirty) continue;
           if (!mine || (r.updated_at || '') > (mine.updated_at || '')) merged.push(r);
         }
         if (merged.length) await idb.putAll(table, merged);
         if (watermark) await metaSet(`sync:${table}`, watermark);
       }
+
+      /* RLS simply stops returning the rows of a member who switched
+         sharing off; the copies already on this device have to go too. */
+      if (rosterChanged) await purgeUnshared(table);
     }
-    await pullProfiles();
     await syncSettings(owner);
+    lastSyncAt = Date.now();
     setState('on', 'Synced');
     document.dispatchEvent(new CustomEvent('brewlog:data'));
     return true;
@@ -353,6 +419,18 @@ export async function sync() {
 }
 
 window.addEventListener('online', () => queueSync(500));
+
+/* An installed PWA is frozen, not closed, so without this nothing pulls
+   between launches — which is why signing out and back in looked like the
+   only way to see another device's changes. */
+function syncOnResume() {
+  if (document.visibilityState !== 'visible') return;
+  if (Date.now() - lastSyncAt < 15000) return;
+  queueSync(300);
+}
+document.addEventListener('visibilitychange', syncOnResume);
+window.addEventListener('pageshow', syncOnResume);
+window.addEventListener('focus', syncOnResume);
 
 onAuthChange(async (s) => {
   const previous = await metaGet('sync:owner', null);

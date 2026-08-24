@@ -150,37 +150,66 @@ function nominatimAddress(a = {}, fallback = '') {
   return line || fallback;
 }
 
+/** How well the place's own name answers what was typed. */
+function nameScore(name, q) {
+  const n = name.toLowerCase().trim(), t = q.toLowerCase().trim();
+  if (n === t) return 0;
+  if (n.startsWith(t)) return 1;
+  if (n.includes(t)) return 2;
+  return 3;
+}
+
+/* Search boxes, in degrees of latitude: the map's neighbourhood, then a
+   wide net over the surrounding region. Both are hard bounds, not hints.
+   Unbounded Nominatim answers "9bar" with a shop in Russia, which is never
+   what you want from a café log — pan the map instead. */
+const NEAR_BOX = 0.6;   // ~40 miles
+const WIDE_BOX = 4.0;   // ~275 miles
+
+function viewbox({ lat, lng }, d) {
+  // widen longitude with latitude so the box stays roughly square on the ground
+  const dLng = d / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+  return [lng - dLng, lat + d, lng + dLng, lat - d].join(',');
+}
+
 /**
- * Search places by name, biased towards `near` but not limited to it —
- * the café you're looking for may be a town over.
+ * Search places by name, within reach of `near`.
  * @returns {Promise<Array<{name, address, lat, lng, distance, tags}>>}
  */
 export async function searchPlacesByName(q, near = null, limit = 12) {
   const query = (q || '').trim();
   if (!query) return [];
+  const anchored = near && Number.isFinite(near.lat) && Number.isFinite(near.lng);
 
-  const params = new URLSearchParams({
-    format: 'jsonv2',
-    limit: String(limit),
-    addressdetails: '1',
-    q: query,
-  });
-  if (near && Number.isFinite(near.lat)) {
-    const d = 0.5; // ~35 miles; a bias box, with bounded off
-    params.set('viewbox', [near.lng - d, near.lat + d, near.lng + d, near.lat - d].join(','));
-  }
+  const ask = async (box) => {
+    const params = new URLSearchParams({
+      format: 'jsonv2', limit: String(limit), addressdetails: '1', q: query,
+    });
+    if (box) { params.set('viewbox', viewbox(near, box)); params.set('bounded', '1'); }
 
-  let json;
-  try {
     const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
     if (res.status === 429) throw new Error('Place search is rate-limiting us — try again in a minute');
     if (!res.ok) throw new Error(`Place search failed (${res.status})`);
-    json = await res.json();
+    return (await res.json()) || [];
+  };
+
+  let raw;
+  try {
+    if (!anchored) {
+      raw = await ask(null);
+    } else {
+      raw = await ask(NEAR_BOX);
+      // Nominatim asks for one request per second; stay a polite citizen
+      if (!raw.length) {
+        await new Promise(r => setTimeout(r, 1100));
+        raw = await ask(WIDE_BOX);
+      }
+    }
   } catch (err) {
     throw new Error(err.message || 'Could not reach the place database');
   }
 
-  return (json || [])
+  return raw
     .map((p) => {
       const lat = parseFloat(p.lat), lng = parseFloat(p.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
@@ -191,13 +220,14 @@ export async function searchPlacesByName(q, near = null, limit = 12) {
         address: nominatimAddress(p.address, p.display_name),
         lat,
         lng,
-        distance: near ? distanceMeters(near, { lat, lng }) : null,
+        distance: anchored ? distanceMeters(near, { lat, lng }) : null,
         tags: { [p.category]: p.type },
+        _name: nameScore(name, query),
         _rank: PLACE_RANK(p),
       };
     })
     .filter(Boolean)
-    .sort((a, b) => a._rank - b._rank ||
+    .sort((a, b) => a._name - b._name || a._rank - b._rank ||
       (a.distance ?? Infinity) - (b.distance ?? Infinity));
 }
 

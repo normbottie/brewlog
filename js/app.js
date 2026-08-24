@@ -53,7 +53,23 @@ function looksLikeAuthCallback() {
   return /(^|&)(access_token|error_description|error)=/.test(hash);
 }
 
-async function route() {
+/* Renders are async, so two overlapping routes used to interleave: the
+   newer one cleared #app while the older was still awaiting its view, and
+   the older view then painted into nodes that were no longer on the page —
+   a blank list. Run them strictly one at a time, and let a queued route
+   drop out if a newer one has already been asked for. */
+let routeChain = Promise.resolve();
+let routeSeq = 0;
+
+function route() {
+  const seq = ++routeSeq;
+  routeChain = routeChain
+    .then(() => (seq === routeSeq ? doRoute() : null))
+    .catch(err => { console.error(err); });
+  return routeChain;
+}
+
+async function doRoute() {
   /* Also handle the callback here, not just on load: if the app is already
      open when the hash changes, the initial captureSession() has long since
      run and the tokens would otherwise be routed as an unknown page. */
@@ -110,9 +126,12 @@ onAuthChange(() => {
   authRouteTimer = setTimeout(() => { route(); queueSync(600); }, 60);
 });
 document.addEventListener('brewlog:navigate', e => { location.hash = e.detail; });
+/* Re-render when a sync brings in new rows. Detail screens are included —
+   otherwise an open bean kept showing whatever photo it had at first paint.
+   Editors are deliberately excluded: a redraw would discard the edit. */
+const REFRESHABLE = /^#\/(beans\/?|cafes\/?|bean\/[^/]+|cafe\/[^/]+)$/;
 document.addEventListener('brewlog:data', () => {
-  // re-render list views when a sync brings in new rows
-  if (/^#\/(beans|cafes)\/?$/.test(location.hash || '#/beans')) route();
+  if (REFRESHABLE.test(location.hash || '#/beans')) route();
 });
 
 /* sync status pill in the top bar of whichever view draws one */

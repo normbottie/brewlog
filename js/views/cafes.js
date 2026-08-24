@@ -56,7 +56,7 @@ export async function render(root) {
   function paintFindWeb() {
     const q = qEl.value.trim();
     findWeb.innerHTML = q
-      ? `<button class="btn-sm btn-block" data-osm style="margin-top:9px">
+      ? `<button class="btn-sm btn-block" data-osm style="margin-top:12px">
            ${icon('search')} Look up “${esc(q)}” on the map
          </button>`
       : '';
@@ -174,7 +174,8 @@ export async function render(root) {
       const found = await searchPlacesByName(q, near);
       if (!found.length) {
         nearStatus.textContent =
-          `Nothing on the map matches “${q}”. Try the street too, or tap the map to place it yourself.`;
+          `Nothing within reach of the map matches “${q}”. Pan the map to the right ` +
+          `area and try again, or tap the map to place it yourself.`;
         return;
       }
       nearStatus.textContent = `${found.length} place${found.length === 1 ? '' : 's'} match “${q}”.`;

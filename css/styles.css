@@ -451,7 +451,7 @@ select {
 .share-row input:checked + .switch::after { transform: translateX(20px); background: #1B1410; }
 .share-row input:focus-visible + .switch { box-shadow: 0 0 0 3px rgba(201,168,124,.3); }
 
-.scope-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+.scope-toggle { display: flex; gap: 8px; margin: 16px 0 14px; }
 .scope-toggle button { flex: 1; padding: 9px 12px; font-size: 14px; border-radius: 12px; color: var(--text-muted); }
 .scope-toggle button[aria-pressed="true"] {
   background: linear-gradient(163deg, rgba(228,199,154,.28), rgba(201,168,124,.15));
