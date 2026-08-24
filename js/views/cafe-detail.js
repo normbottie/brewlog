@@ -1,7 +1,7 @@
 /* One cafe — edit in place. */
 
 import { getCafe, saveCafe, removeCafe, isForeign, membersById } from '../store.js';
-import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge } from '../ui.js';
+import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge, goReplace } from '../ui.js';
 
 export async function render(root, id) {
   const cafe = await getCafe(id);
@@ -77,7 +77,7 @@ export async function render(root, id) {
     if (await confirmSheet('Delete this café?', `“${cafe.name || 'Untitled'}” will be removed.`)) {
       await removeCafe(cafe.id);
       toast('Deleted');
-      location.hash = '#/cafes';
+      goReplace('#/cafes');
     }
   });
 

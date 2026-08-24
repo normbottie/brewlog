@@ -4,7 +4,7 @@ import {
   getBean, saveBean, blankBean, setBeanImage, beanImageURL, beanRawBlob, isForeign,
   AXES, AXIS_LABELS, BREW_METHODS, ROAST_LEVELS, PROCESSES,
 } from '../store.js';
-import { h, esc, icon, stars, bindStars, toast, bindRange } from '../ui.js';
+import { h, esc, icon, stars, bindStars, toast, bindRange, goReplace } from '../ui.js';
 import { radarSVG } from '../radar.js';
 import {
   fileToImage, plainFrame, apiStudio, readBagLabel, hasImageAPI,
@@ -18,7 +18,7 @@ export async function render(root, id) {
   if (!bean) { location.hash = '#/beans'; return; }
   if (!isNew && isForeign(bean)) {   // shared entries are read-only
     toast('That entry belongs to another member');
-    location.hash = `#/bean/${id}`;
+    goReplace(`#/bean/${id}`);
     return;
   }
   bean.ratings = { ...{ aromatics: 3, acidity: 3, sweetness: 3, aftertaste: 3, body: 3 }, ...(bean.ratings || {}) };
@@ -384,7 +384,8 @@ export async function render(root, id) {
       await saveBean(bean);
       if (chosen) await setBeanImage(bean.id, chosen, rawBlob);
       toast('Saved');
-      location.hash = `#/bean/${bean.id}`;
+      // replace, not push: Back should skip the editor entirely
+      goReplace(`#/bean/${bean.id}`);
     } catch (err) {
       toast(err.message || 'Save failed');
       btn.disabled = false;

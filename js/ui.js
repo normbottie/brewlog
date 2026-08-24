@@ -85,6 +85,14 @@ export function ownerBadge(profile, { compact = false } = {}) {
   </span>`;
 }
 
+/* Navigate without leaving the current screen in the back stack.
+   Use after a mutation — saving or deleting — so Back never returns to the
+   editor you just left or an entry that no longer exists. */
+export function goReplace(hash) {
+  if (location.hash === hash) { location.reload(); return; }
+  location.replace(hash);
+}
+
 export function toast(msg, ms = 2400) {
   document.querySelectorAll('.toast').forEach(t => t.remove());
   const el = h(`<div class="toast">${esc(msg)}</div>`);

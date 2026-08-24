@@ -1,7 +1,7 @@
 /* Single bean — hero shot, radar, details, notes. */
 
 import { getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById } from '../store.js';
-import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge } from '../ui.js';
+import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace } from '../ui.js';
 import { radarSVG } from '../radar.js';
 
 export async function render(root, id) {
@@ -84,7 +84,7 @@ export async function render(root, id) {
     if (await confirmSheet('Delete this bean?', `“${b.name || 'Untitled'}” and its photo will be removed.`)) {
       await removeBean(b.id);
       toast('Deleted');
-      location.hash = '#/beans';
+      goReplace('#/beans');   // don't leave a deleted bean in the back stack
     }
   });
 
