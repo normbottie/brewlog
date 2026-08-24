@@ -698,7 +698,7 @@ function scoreReadModel(id) {
 }
 
 /** Ask the key what it can use for reading a label; cached in localStorage. */
-async function pickReadModel(cfg) {
+async function pickReadModel() {   // routes through geminiFetch, so needs no cfg
   try {
     const cached = localStorage.getItem(LS_READ_MODEL);
     if (cached) return cached;
@@ -772,7 +772,10 @@ export async function readBagLabel(img) {
   const blob = await canvasToBlob(small, 'image/jpeg', 0.9);
   const b64 = (await blobToDataURL(blob)).split(',')[1];
 
-  if (cfg.provider === 'openai') {
+  /* cfg is null whenever the shared proxy is supplying the key, which is
+     the normal case for an invited user — optional-chain like apiStudio
+     does, or reading a label throws before it ever reaches the network. */
+  if (cfg?.provider === 'openai') {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}` },
@@ -796,7 +799,7 @@ export async function readBagLabel(img) {
   /* Try the discovered model, then each fallback, across both endpoints.
      A "model not found" is worth retrying with another name; anything else
      (bad key, quota, safety block) is reported straight away. */
-  const discovered = await pickReadModel(cfg);
+  const discovered = await pickReadModel();
   const candidates = [discovered, ...GEMINI_READ_FALLBACKS.filter(m => m !== discovered)];
   let lastErr = null;
 
