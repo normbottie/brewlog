@@ -44,7 +44,7 @@ export async function render(root, id) {
         <div class="placeholder">
           ${icon('camera')}
           <div style="font-weight:600;color:var(--text-muted)">Photograph the bag</div>
-          <div class="hint" style="margin-top:4px">Stand it upright against a plain wall</div>
+          <div class="hint" style="margin-top:4px">Take a clear photo of the front of the bag</div>
         </div>
         <img data-preview hidden alt="">
       </div>
