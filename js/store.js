@@ -219,12 +219,42 @@ function assignSlots(rows) {
   return rows;
 }
 
+let profilesFresh = false;   // have we read profiles from the server this session?
+
 async function pullProfiles() {
   try {
     const rows = await sb.selectSince('profiles', null);
     profileCache = assignSlots(rows || []);
+    profilesFresh = true;
     await metaSet('profiles', profileCache);
   } catch { /* table may predate this feature */ }
+}
+
+/* ---- onboarding ---------------------------------------------------- */
+
+/* A new account has no profile row, so it has no name to put on shared
+   entries and has never been asked whether it wants to share at all.
+   Answered once and remembered, so a later blank name doesn't re-prompt. */
+let onboardingDone = false;
+
+export async function needsOnboarding() {
+  if (onboardingDone || !isSignedIn()) return false;
+  if (await metaGet('onboarded', false)) { onboardingDone = true; return false; }
+
+  // Don't guess from an empty cache on a fresh device — ask the server first.
+  if (!profilesFresh) await pullProfiles();
+  if (!profilesFresh) return false;   // offline: never block on a form that can't submit
+
+  if ((myProfile()?.display_name || '').trim()) {
+    await finishOnboarding();
+    return false;
+  }
+  return true;
+}
+
+export async function finishOnboarding() {
+  onboardingDone = true;
+  await metaSet('onboarded', true);
 }
 
 export async function loadCachedProfiles() {

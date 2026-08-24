@@ -1,7 +1,7 @@
 /* Router + shell. */
 
 import { icon, toast } from './ui.js';
-import { queueSync, onSyncChange, syncState, loadCachedProfiles } from './store.js';
+import { queueSync, onSyncChange, syncState, loadCachedProfiles, needsOnboarding } from './store.js';
 import { captureSession, isSignedIn, onAuthChange } from './auth.js';
 
 import * as Beans from './views/beans.js';
@@ -11,6 +11,7 @@ import * as Cafes from './views/cafes.js';
 import * as CafeDetail from './views/cafe-detail.js';
 import * as Settings from './views/settings.js';
 import * as Lock from './views/lock.js';
+import * as Onboard from './views/onboard.js';
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -91,6 +92,20 @@ async function doRoute() {
     Lock.render(app);
     return;
   }
+
+  /* A brand-new account has no name and has never been asked about sharing.
+     Ask once, before anything else — the answer decides how their entries
+     appear to everyone else. */
+  if (await needsOnboarding()) {
+    if (current && current.destroy) { try { current.destroy(); } catch {} }
+    current = null;
+    tabbar.hidden = true;
+    app.innerHTML = '';
+    window.scrollTo(0, 0);
+    Onboard.render(app);
+    return;
+  }
+
   tabbar.hidden = false;
 
   const hash = location.hash || '#/beans';

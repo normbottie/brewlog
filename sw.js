@@ -1,6 +1,6 @@
 /* Brewlog service worker — app shell cached, map tiles cached opportunistically. */
 
-const VERSION = 'brewlog-v4';
+const VERSION = 'brewlog-v5';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 
@@ -31,6 +31,7 @@ const SHELL_FILES = [
   './js/views/cafe-detail.js',
   './js/views/settings.js',
   './js/views/lock.js',
+  './js/views/onboard.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-180.png',

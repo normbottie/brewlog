@@ -328,8 +328,15 @@ select {
   transition: transform .2s var(--ease), border-color .2s;
   text-align: left;
   padding: 0;
-  display: block;
   width: 100%;
+  /* A <button> centres its content box, and `display: block` does not undo
+     that. Grid stretches every card to the tallest in the row, so shorter
+     cards were pushing the photo down and showing a band of card chrome
+     above it. Lay the card out explicitly, top-aligned. */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 .bean-card:active { transform: scale(.972); }
 .bean-card .shot {

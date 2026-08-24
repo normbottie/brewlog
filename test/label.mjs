@@ -60,7 +60,12 @@ await page.route('**/*.supabase.co/**', async (route) => {
   }
 
   if (url.pathname.startsWith('/rest/v1/')) {
-    return route.request().method() === 'GET' ? json([]) : json([], 201);
+    if (route.request().method() !== 'GET') return json([], 201);
+    // an established account, so first-run setup doesn't take the screen
+    return json(url.pathname.endsWith('/profiles')
+      ? [{ user_id: ME, display_name: 'Norm', share_log: false,
+           created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }]
+      : []);
   }
   if (url.pathname.startsWith('/storage/v1/')) return json({ Key: 'ok' });
   return json({});
