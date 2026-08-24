@@ -130,6 +130,77 @@ out center;`;
   }
 }
 
+/* Places matching a name, for finding somewhere you haven't logged yet.
+   Nominatim rather than Overpass: it does fuzzy name matching and will
+   turn up roasters and bakeries that aren't tagged amenity=cafe. */
+const PLACE_RANK = (p) => {
+  const cat = `${p.category || ''}=${p.type || ''}`;
+  if (cat === 'amenity=cafe' || cat === 'shop=coffee') return 0;
+  if (cat === 'shop=bakery' || cat === 'amenity=restaurant' || cat === 'amenity=fast_food') return 1;
+  if (p.category === 'shop' || p.category === 'amenity') return 2;
+  return 3;
+};
+
+function nominatimAddress(a = {}, fallback = '') {
+  const line = [
+    [a.house_number, a.road].filter(Boolean).join(' '),
+    a.city || a.town || a.village || a.suburb,
+    a.state,
+  ].filter(Boolean).join(', ');
+  return line || fallback;
+}
+
+/**
+ * Search places by name, biased towards `near` but not limited to it —
+ * the café you're looking for may be a town over.
+ * @returns {Promise<Array<{name, address, lat, lng, distance, tags}>>}
+ */
+export async function searchPlacesByName(q, near = null, limit = 12) {
+  const query = (q || '').trim();
+  if (!query) return [];
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    limit: String(limit),
+    addressdetails: '1',
+    q: query,
+  });
+  if (near && Number.isFinite(near.lat)) {
+    const d = 0.5; // ~35 miles; a bias box, with bounded off
+    params.set('viewbox', [near.lng - d, near.lat + d, near.lng + d, near.lat - d].join(','));
+  }
+
+  let json;
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+    if (res.status === 429) throw new Error('Place search is rate-limiting us — try again in a minute');
+    if (!res.ok) throw new Error(`Place search failed (${res.status})`);
+    json = await res.json();
+  } catch (err) {
+    throw new Error(err.message || 'Could not reach the place database');
+  }
+
+  return (json || [])
+    .map((p) => {
+      const lat = parseFloat(p.lat), lng = parseFloat(p.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      const name = (p.name || (p.display_name || '').split(',')[0] || '').trim();
+      if (!name) return null;
+      return {
+        name,
+        address: nominatimAddress(p.address, p.display_name),
+        lat,
+        lng,
+        distance: near ? distanceMeters(near, { lat, lng }) : null,
+        tags: { [p.category]: p.type },
+        _rank: PLACE_RANK(p),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a._rank - b._rank ||
+      (a.distance ?? Infinity) - (b.distance ?? Infinity));
+}
+
 /**
  * Widen the search until something turns up, so "nothing here" is a real
  * answer rather than an artefact of the starting radius.

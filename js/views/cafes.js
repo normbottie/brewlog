@@ -2,7 +2,7 @@
 
 import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign } from '../store.js';
 import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, memberColor } from '../ui.js';
-import { findCafesAround, locate, formatDistance, distanceMeters } from '../places.js';
+import { findCafesAround, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
 
 let mapRef = null;
 
@@ -36,8 +36,9 @@ export async function render(root) {
       <div class="hint" data-nearstatus style="margin-top:8px">Or tap anywhere on the map to drop a pin — you can drag it to fine-tune, and close the sheet to cancel.</div>
       <div class="search-bar" style="margin-top:16px">
         ${icon('search')}
-        <input type="search" placeholder="Search cafés and notes…" data-q>
+        <input type="search" placeholder="Search your cafés…" data-q>
       </div>
+      <div data-findweb></div>
       ${others.length ? `<div class="scope-toggle" data-scope>
         <button data-sc="mine" aria-pressed="${!scope.shared}">Mine</button>
         <button data-sc="all" aria-pressed="${scope.shared}">Everyone</button>
@@ -48,8 +49,21 @@ export async function render(root) {
 
   const listEl = view.querySelector('[data-list]');
   const qEl = view.querySelector('[data-q]');
+  const findWeb = view.querySelector('[data-findweb]');
+
+  /* The search box only knows about places you've already logged, so give
+     the same query somewhere to go when you're looking for one you haven't. */
+  function paintFindWeb() {
+    const q = qEl.value.trim();
+    findWeb.innerHTML = q
+      ? `<button class="btn-sm btn-block" data-osm style="margin-top:9px">
+           ${icon('search')} Look up “${esc(q)}” on the map
+         </button>`
+      : '';
+  }
 
   function paint() {
+    paintFindWeb();
     const q = qEl.value.trim().toLowerCase();
     const rows = cafes.filter(c => !q ||
       [c.name, c.address, c.notes].join(' ').toLowerCase().includes(q));
@@ -58,7 +72,11 @@ export async function render(root) {
         'Add the places you drink at, rate them, and keep notes on what to order.');
       return;
     }
-    if (!rows.length) { listEl.innerHTML = empty('search', 'Nothing matches', 'Try another search.'); return; }
+    if (!rows.length) {
+      listEl.innerHTML = empty('search', 'None of yours match',
+        'You haven’t rated this one yet — look it up on the map to add it.');
+      return;
+    }
     listEl.innerHTML = rows.map(c => {
       const foreign = isForeign(c);
       const owner = foreign ? members.get(c.user_id) : null;
@@ -96,6 +114,21 @@ export async function render(root) {
 
   const nearStatus = view.querySelector('[data-nearstatus]');
 
+  /* Show the area that was actually searched. Without this the map kept its
+     own zoom, so results outside the visible box looked like a bug. */
+  let searchRing = null;
+  function showSearchArea(point, radius) {
+    if (!mapRef) return;
+    if (searchRing) mapRef.removeLayer(searchRing);
+    searchRing = L.circle([point.lat, point.lng], {
+      radius,
+      color: '#E4C79A', weight: 1, opacity: 0.55,
+      fillColor: '#E4C79A', fillOpacity: 0.07,
+      interactive: false,
+    }).addTo(mapRef);
+    mapRef.fitBounds(searchRing.getBounds(), { padding: [22, 22] });
+  }
+
   async function runSearch(btn, getPoint, label) {
     const original = btn.innerHTML;
     btn.disabled = true;
@@ -103,18 +136,21 @@ export async function render(root) {
     nearStatus.innerHTML = `<span class="busy"><span class="spinner"></span>Searching OpenStreetMap…</span>`;
     try {
       const point = await getPoint();
-      if (mapRef) mapRef.setView([point.lat, point.lng], 15);
+      // pan, but keep the zoom the user chose — the fit comes after,
+      // once we know how far the search actually reached
+      if (mapRef) mapRef.setView([point.lat, point.lng], mapRef.getZoom());
       const { results, radius } = await findCafesAround(point);
+      showSearchArea(point, radius);
       const where = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
       if (!results.length) {
         nearStatus.innerHTML =
-          `No cafés are mapped within 5&nbsp;miles of ${esc(where)}. That is OpenStreetMap's ` +
-          `coverage, not an error — tap the map to add one yourself.`;
+          `No cafés are mapped within ${esc(formatDistance(radius))} of ${esc(where)}. That is ` +
+          `OpenStreetMap's coverage, not an error — tap the map to add one yourself.`;
         return;
       }
       nearStatus.textContent =
-        `${results.length} found within ${formatDistance(radius)} of ${where}.`;
-      showNearbySheet(results, point, cafes, paint);
+        `${results.length} found within ${formatDistance(radius)} of ${where} — the circled area.`;
+      showNearbySheet(results, cafes, paint);
     } catch (err) {
       nearStatus.textContent = err.message || 'Could not search for cafés';
     } finally {
@@ -122,6 +158,41 @@ export async function render(root) {
       btn.innerHTML = original;
     }
   }
+
+  /* Look a place up by name, whether or not it's near the map. */
+  findWeb.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-osm]');
+    if (!btn) return;
+    const q = qEl.value.trim();
+    if (!q) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Looking up “${esc(q)}”…`;
+    nearStatus.innerHTML = `<span class="busy"><span class="spinner"></span>Searching OpenStreetMap…</span>`;
+    try {
+      const near = mapRef ? (({ lat, lng }) => ({ lat, lng }))(mapRef.getCenter()) : null;
+      const found = await searchPlacesByName(q, near);
+      if (!found.length) {
+        nearStatus.textContent =
+          `Nothing on the map matches “${q}”. Try the street too, or tap the map to place it yourself.`;
+        return;
+      }
+      nearStatus.textContent = `${found.length} place${found.length === 1 ? '' : 's'} match “${q}”.`;
+      if (mapRef) {
+        if (searchRing) { mapRef.removeLayer(searchRing); searchRing = null; }
+        mapRef.setView([found[0].lat, found[0].lng], Math.max(mapRef.getZoom(), 14));
+      }
+      showNearbySheet(found, cafes, paint, {
+        title: `Matches for “${q}”`,
+        hint: 'From OpenStreetMap. Tap one to rate it — it gets added to your cafés.',
+      });
+    } catch (err) {
+      nearStatus.textContent = err.message || 'Could not search for places';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  });
 
   view.querySelector('[data-near]').onclick = (e) =>
     runSearch(e.currentTarget, () => locate(), 'Finding you…');
@@ -219,19 +290,20 @@ function whenLeaflet() {
 
 /* ------------------------------------------------------------------ */
 
-/** Results from Overpass, with the ones you've already rated marked. */
-function showNearbySheet(found, here, cafes, onDone) {
+/** OpenStreetMap results, with the ones you've already rated marked. */
+function showNearbySheet(found, cafes, onDone, opts = {}) {
   if (!found.length) return;
+  const title = opts.title || `${found.length} café${found.length === 1 ? '' : 's'} nearby`;
+  const hint = opts.hint ||
+    'From OpenStreetMap. Tap one to rate it. Missing somewhere? Close this and tap the map.';
 
-  sheet(`${found.length} café${found.length === 1 ? '' : 's'} nearby`, (close) => {
+  sheet(title, (close) => {
     const already = (c) =>
       cafes.find(x => Number.isFinite(x.lat) &&
         distanceMeters({ lat: x.lat, lng: x.lng }, { lat: c.lat, lng: c.lng }) < 60);
 
     const node = h(`<div>
-      <div class="hint" style="margin:-6px 0 14px">
-        From OpenStreetMap. Tap one to rate it. Missing somewhere? Close this and tap the map.
-      </div>
+      <div class="hint" style="margin:-6px 0 14px">${esc(hint)}</div>
       <div data-rows></div>
     </div>`);
 
@@ -245,7 +317,7 @@ function showNearbySheet(found, here, cafes, onDone) {
           ${mine ? `<div style="margin-top:5px">${stars(mine.rating)}</div>` : ''}
         </div>
         <div style="flex:0 0 auto;text-align:right">
-          <div class="chip chip-muted">${esc(formatDistance(c.distance))}</div>
+          ${Number.isFinite(c.distance) ? `<div class="chip chip-muted">${esc(formatDistance(c.distance))}</div>` : ''}
           ${mine ? '<div class="hint" style="margin-top:5px">rated</div>' : ''}
         </div>
       </button>`;
@@ -261,7 +333,6 @@ function showNearbySheet(found, here, cafes, onDone) {
       addCafeSheet({ name: c.name, address: c.address, lat: c.lat, lng: c.lng }, cafes, onDone);
     });
 
-    void here;
     return node;
   });
 }
