@@ -33,6 +33,8 @@ const ICONS = {
   edit: `<g ${STROKE}><path d="M16.6 3.9a2.1 2.1 0 0 1 3 3L8 18.5l-4 1 1-4Z"/></g>`,
   sparkle: `<g ${STROKE}><path d="M12 3.2 13.7 9l5.8 1.7-5.8 1.7L12 18.2l-1.7-5.8L4.5 10.7 10.3 9Z"/>
             <path d="M18.6 3v3.2M17 4.6h3.2"/></g>`,
+  card: `<g ${STROKE}><rect x="3.6" y="3.4" width="16.8" height="17.2" rx="2.8"/>
+         <path d="M7.6 14.6l3-3.4 2.6 2.6 2-2.2 2.2 3"/><circle cx="9.4" cy="8.4" r="1.3"/></g>`,
   locate: `<g ${STROKE}><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.3"/>
            <path d="M12 2v2.4M12 19.6V22M22 12h-2.4M4.4 12H2"/></g>`,
 };

@@ -79,6 +79,70 @@ create table if not exists public.profiles (
 );
 alter table public.profiles enable row level security;
 
+-- ------------------------------------------------- admins and approval --
+-- Two flags, added in place so existing projects can run this file again.
+-- Everyone already using the app is grandfathered in: approval only gates
+-- accounts created from here on. Re-running must never revoke someone.
+
+do $$
+declare introducing boolean;
+begin
+  introducing := not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles'
+      and column_name = 'approved');
+
+  alter table public.profiles add column if not exists approved boolean not null default false;
+  alter table public.profiles add column if not exists is_admin boolean not null default false;
+
+  -- The grandfathering itself happens near the end of this file, once every
+  -- account actually has a profile row to grandfather.
+  perform set_config('brewlog.introducing', introducing::text, false);
+end $$;
+
+-- Asked by policies on profiles itself, so it must not be subject to those
+-- policies or it would recurse. security definer runs it as the owner.
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select p.is_admin from public.profiles p where p.user_id = auth.uid()), false);
+$$;
+
+create or replace function public.is_approved()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select p.approved or p.is_admin from public.profiles p
+                   where p.user_id = auth.uid()), false);
+$$;
+
+/* Without this, "you may update your own row" would also mean "you may set
+   your own approved and is_admin", which is the whole gate. Non-admins get
+   their attempted values silently replaced with the existing ones. */
+create or replace function public.guard_profile_flags()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  /* Only guard requests that arrive as a signed-in user. Running this file
+     in the SQL editor, or anything acting as service_role, has no
+     auth.uid() — and must not be blocked, or the migration below could
+     never grant the first admin. */
+  if auth.uid() is null then
+    return new;
+  end if;
+  if not public.is_admin() then
+    if tg_op = 'INSERT' then
+      new.is_admin := false;
+      new.approved := false;
+    else
+      new.is_admin := old.is_admin;
+      new.approved := old.approved;
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists profiles_guard_flags on public.profiles;
+create trigger profiles_guard_flags
+  before insert or update on public.profiles
+  for each row execute function public.guard_profile_flags();
+
 -- every member can see who is sharing (name only, never the email)
 drop policy if exists "profiles readable" on public.profiles;
 create policy "profiles readable" on public.profiles
@@ -90,7 +154,8 @@ create policy "own profile write" on public.profiles
 drop policy if exists "own profile update" on public.profiles;
 create policy "own profile update" on public.profiles
   for update to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  using (auth.uid() = user_id or public.is_admin())
+  with check (auth.uid() = user_id or public.is_admin());
 
 -- ------------------------------------------------------------- policies --
 
@@ -110,19 +175,24 @@ create policy "beans readable" on public.beans
   for select to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p
-               where p.user_id = beans.user_id and p.share_log)
+    or public.is_admin()
+    or (public.is_approved()
+        and exists (select 1 from public.profiles p
+                    where p.user_id = beans.user_id and p.share_log))
   );
 drop policy if exists "beans insert own" on public.beans;
 create policy "beans insert own" on public.beans
-  for insert to authenticated with check (auth.uid() = user_id);
+  for insert to authenticated
+  with check (auth.uid() = user_id and public.is_approved());
 drop policy if exists "beans update own" on public.beans;
 create policy "beans update own" on public.beans
   for update to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  using ((auth.uid() = user_id and public.is_approved()) or public.is_admin())
+  with check ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
 drop policy if exists "beans delete own" on public.beans;
 create policy "beans delete own" on public.beans
-  for delete to authenticated using (auth.uid() = user_id);
+  for delete to authenticated
+  using ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
 
 drop policy if exists "own cafes" on public.cafes;
 drop policy if exists "cafes readable" on public.cafes;
@@ -130,19 +200,24 @@ create policy "cafes readable" on public.cafes
   for select to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p
-               where p.user_id = cafes.user_id and p.share_log)
+    or public.is_admin()
+    or (public.is_approved()
+        and exists (select 1 from public.profiles p
+                    where p.user_id = cafes.user_id and p.share_log))
   );
 drop policy if exists "cafes insert own" on public.cafes;
 create policy "cafes insert own" on public.cafes
-  for insert to authenticated with check (auth.uid() = user_id);
+  for insert to authenticated
+  with check (auth.uid() = user_id and public.is_approved());
 drop policy if exists "cafes update own" on public.cafes;
 create policy "cafes update own" on public.cafes
   for update to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  using ((auth.uid() = user_id and public.is_approved()) or public.is_admin())
+  with check ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
 drop policy if exists "cafes delete own" on public.cafes;
 create policy "cafes delete own" on public.cafes
-  for delete to authenticated using (auth.uid() = user_id);
+  for delete to authenticated
+  using ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
 
 -- Per-account app settings (currently the image-API key), so a second
 -- device picks them up after sign-in instead of asking again.
@@ -168,6 +243,35 @@ grant select, insert, update on public.profiles to authenticated;
 insert into public.profiles (user_id, display_name)
 select id, coalesce(split_part(email, '@', 1), 'Member') from auth.users
 on conflict (user_id) do nothing;
+
+/* Someone has to be able to approve the first newcomer. Edit the address
+   below if the owner's account is not this one; failing a match, the
+   longest-standing account is made admin so the project is never left
+   with nobody who can let anyone in. */
+do $$
+declare owner_email text := 'normbottie@gmail.com';
+begin
+  /* Everyone already using the app when approval was introduced keeps
+     working. This runs here, not beside the ALTER above, because the
+     backfill that gives each account a profile row happens just before it.
+     Guarded so re-running never un-revokes someone. */
+  if current_setting('brewlog.introducing', true) = 'true' then
+    update public.profiles set approved = true;
+  end if;
+
+  update public.profiles p
+     set is_admin = true, approved = true
+    from auth.users u
+   where u.id = p.user_id
+     and lower(u.email) = lower(owner_email);
+
+  if not exists (select 1 from public.profiles where is_admin) then
+    update public.profiles
+       set is_admin = true, approved = true
+     where user_id = (select user_id from public.profiles
+                      order by created_at nulls last, user_id limit 1);
+  end if;
+end $$;
 
 -- ------------------------------------------------------------ migration --
 -- Adopt rows created before accounts existed. Sign in through the app once so

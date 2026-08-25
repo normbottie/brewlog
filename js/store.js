@@ -95,13 +95,34 @@ async function allLive(store, { shared = false } = {}) {
 
 export const listBeans = (opts) => allLive('beans', opts);
 export const listCafes = (opts) => allLive('cafes', opts);
+
+/* Which entries the list screens are currently showing. The detail screen
+   needs the same answer so that paging through beans walks the list you
+   were actually looking at. */
+export const SCOPE_KEYS = { beans: 'brewlog.scope.beans', cafes: 'brewlog.scope.cafes' };
+export function scopeShared(kind) {
+  try { return localStorage.getItem(SCOPE_KEYS[kind]) === '1'; } catch { return false; }
+}
+
+/** The entries either side of `id`, in list order, wrapping at both ends. */
+export async function beanNeighbours(id) {
+  const list = await listBeans({ shared: scopeShared('beans') });
+  const i = list.findIndex(b => b.id === id);
+  if (i < 0 || list.length < 2) return { prev: null, next: null, index: i, total: list.length };
+  return {
+    prev: list[(i - 1 + list.length) % list.length],
+    next: list[(i + 1) % list.length],
+    index: i,
+    total: list.length,
+  };
+}
 export const getBean = (id) => idb.get('beans', id);
 export const getCafe = (id) => idb.get('cafes', id);
 
 /* ---- write --------------------------------------------------------- */
 
 async function save(store, rec) {
-  if (isForeign(rec)) throw new Error('This entry belongs to another member');
+  if (!canEdit(rec)) throw new Error('This entry belongs to another member');
   rec.updated_at = now();
   rec._dirty = true;
   await idb.put(store, rec);
@@ -251,6 +272,52 @@ export function sharingMembers() {
   return profileCache.filter(p => p.share_log && p.user_id !== userId());
 }
 
+/* ---- admins and approval ------------------------------------------- */
+
+/* These flags live in columns added by a later schema.sql. If the project
+   hasn't run it, no profile carries them — and the safe reading of that is
+   "nobody is an admin, and approval isn't gating anything", rather than
+   locking every member out of their own log. */
+export function approvalEnabled() {
+  return profileCache.some(p => Object.prototype.hasOwnProperty.call(p, 'approved'));
+}
+
+export function isAdmin() { return !!myProfile()?.is_admin; }
+
+export function isApproved() {
+  if (!approvalEnabled()) return true;
+  const p = myProfile();
+  return !!(p?.approved || p?.is_admin);
+}
+
+/** Everyone with a profile, admins first, then pending, then by name. */
+export function allMembers() {
+  const rank = (p) => (p.is_admin ? 0 : p.approved ? 2 : 1);
+  return [...profileCache].sort((a, b) =>
+    rank(a) - rank(b) ||
+    String(a.display_name || '').localeCompare(String(b.display_name || '')));
+}
+
+export function pendingMembers() {
+  if (!approvalEnabled()) return [];
+  return profileCache.filter(p => !p.approved && !p.is_admin);
+}
+
+/** Admins may let a member in, or put them back out. */
+export async function setMemberApproval(memberId, approved) {
+  if (!isAdmin()) throw new Error('Only an admin can do that');
+  if (memberId === userId()) throw new Error('You cannot change your own access');
+  /* A PATCH, not an upsert: upserting someone else's row has to satisfy the
+     insert policy too, and that one is rightly "your own row only". */
+  await sb.patch('profiles', `user_id=eq.${encodeURIComponent(memberId)}`,
+    { approved: !!approved, updated_at: now() });
+  await pullProfiles();
+  document.dispatchEvent(new CustomEvent('brewlog:data'));
+}
+
+/** Whether this account may change `rec` — its owner, or an admin. */
+export function canEdit(rec) { return !isForeign(rec) || isAdmin(); }
+
 export function myProfile() {
   return profileCache.find(p => p.user_id === userId()) || null;
 }
@@ -341,7 +408,11 @@ const LOCAL_FIELDS = ['_dirty', '_imgDirty'];
 function toRemote(rec, owner) {
   const out = { ...rec };
   LOCAL_FIELDS.forEach(f => delete out[f]);
-  out.user_id = owner;    // row-level security matches this against auth.uid()
+  /* Keep whoever owns it. Stamping `owner` unconditionally would have an
+     admin's correction quietly transfer the entry into their own log —
+     and RLS would reject it anyway, since the row already belongs to
+     someone else. New local rows have no owner yet, so they get one. */
+  out.user_id = rec.user_id || owner;
   return out;
 }
 
@@ -436,7 +507,8 @@ export async function sync() {
     for (const table of ['beans', 'cafes']) {
       /* --- push --- */
       const local = await idb.all(table);
-      const dirty = local.filter(r => r._dirty && !isForeign(r));
+      // admins edit other members' entries, so those have to push too
+      const dirty = local.filter(r => r._dirty && canEdit(r));
 
       if (table === 'beans') {
         for (const b of dirty.filter(r => r._imgDirty)) {

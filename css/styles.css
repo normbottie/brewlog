@@ -856,6 +856,68 @@ input[type=range]::-moz-range-thumb {
 #ptr.loading { transform: translate(-50%, 16px) !important; transition: transform .2s; }
 #ptr.loading .spinner { animation-play-state: running; }
 
+/* ============================================================
+   Links between things — bean ↔ café ↔ roaster
+   ============================================================ */
+
+/* Rows that navigate are anchors, not buttons, so a long press offers
+   "open in new tab" and the hash lands in history like any other link. */
+a.btn { text-decoration: none; }
+a.cafe-row { text-decoration: none; color: inherit; }
+a.cafe-row:active { transform: scale(.988); }
+
+/* Bag thumbnails fall back to the initial rather than an empty square: a
+   bean logged on another device has its row long before its photo. */
+.cafe-row .avatar.shot { position: relative; overflow: hidden; }
+.cafe-row .avatar.shot img {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cafe-row .avatar.shot img[hidden] { display: none; }
+
+.cafe-row .chev {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  transform: rotate(180deg);
+}
+.cafe-row .chev svg { width: 19px; height: 19px; }
+
+/* The roaster name under a bag title is a door, so it has to look like one. */
+.hero .cap a.roaster {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(201,168,124,.42);
+  padding-bottom: 1px;
+}
+.hero .cap a.roaster::after { content: "›"; font-size: 15px; opacity: .8; }
+
+.inline-link {
+  display: inline-block;
+  margin: 2px 0 12px;
+  color: var(--tan);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.inline-link:active { opacity: .6; }
+
+.stat-row { display: flex; align-items: stretch; text-align: center; }
+.stat-row .stat { flex: 1; }
+.stat-row .stat + .stat { border-left: 1px solid var(--glass-brd); }
+.stat-row .big { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.stat-row .lbl {
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 620; margin-top: 4px;
+}
+.stat-row .stars svg { width: 15px; height: 15px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

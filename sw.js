@@ -1,6 +1,6 @@
 /* Brewlog service worker — app shell cached, map tiles cached opportunistically. */
 
-const VERSION = 'brewlog-v6';
+const VERSION = 'brewlog-v7';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 
@@ -19,6 +19,7 @@ const SHELL_FILES = [
   './js/supabase.js',
   './js/imaging.js',
   './js/radar.js',
+  './js/card.js',
   './js/ui.js',
   './js/seed.js',
   './js/places.js',
@@ -27,6 +28,7 @@ const SHELL_FILES = [
   './js/views/beans.js',
   './js/views/bean-detail.js',
   './js/views/bean-edit.js',
+  './js/views/roaster.js',
   './js/views/cafes.js',
   './js/views/cafe-detail.js',
   './js/views/settings.js',

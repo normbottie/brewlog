@@ -114,6 +114,21 @@ export async function upsert(table, rows) {
   return jsonOrThrow(res);
 }
 
+/** PATCH rows matching a PostgREST filter, e.g. `user_id=eq.<uuid>`. */
+export async function patch(table, query, body) {
+  const cfg = getConfig();
+  if (!cfg) return null;
+  const res = await fetch(`${cfg.url}/rest/v1/${table}?${query}`, {
+    method: 'PATCH',
+    headers: await headers(cfg, {
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    }),
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow(res);
+}
+
 /** Upload a blob to storage; returns the public URL. */
 export async function uploadImage(path, blob) {
   const cfg = getConfig();

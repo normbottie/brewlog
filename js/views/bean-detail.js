@@ -2,10 +2,11 @@
 
 import {
   getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById,
-  importBean, myBeanLike,
+  importBean, myBeanLike, cafeForBean, roasterKey,
 } from '../store.js';
 import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
 import { radarSVG } from '../radar.js';
+import { shareBeanCard } from '../card.js';
 
 export async function render(root, id) {
   const b = await getBean(id);
@@ -17,6 +18,8 @@ export async function render(root, id) {
 
   const foreign = isForeign(b);
   const owner = foreign ? membersById().get(b.user_id) : null;
+  const cafe = await cafeForBean(b);
+  const rKey = roasterKey(b.roaster);
 
   const kv = [
     ['Origin', [b.origin, b.region].filter(Boolean).join(' · ')],
@@ -43,7 +46,9 @@ export async function render(root, id) {
         <div class="fade"></div>
         <div class="cap">
           <h2>${esc(b.name || 'Untitled')}</h2>
-          ${b.roaster ? `<div class="roaster">${esc(b.roaster)}</div>` : ''}
+          ${b.roaster ? (rKey
+            ? `<a class="roaster link" href="#/roaster/${encodeURIComponent(rKey)}">${esc(b.roaster)}</a>`
+            : `<div class="roaster">${esc(b.roaster)}</div>`) : ''}
           ${b.overall ? `<div style="margin-top:8px">${stars(b.overall)}</div>` : ''}
         </div>
       </div>
@@ -59,6 +64,16 @@ export async function render(root, id) {
         <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px">
           ${b.flavor_notes.map(n => `<span class="chip">${esc(n)}</span>`).join('')}
         </div>` : ''}
+
+      ${cafe ? `<a class="glass cafe-row" href="#/cafe/${esc(cafe.id)}" style="margin-bottom:16px">
+          <div class="avatar">${esc((cafe.name || '?').trim().charAt(0).toUpperCase())}</div>
+          <div class="body">
+            <div class="hint" style="margin:0 0 1px">Got it at</div>
+            <div class="nm">${esc(cafe.name || 'Untitled')}</div>
+            <div class="addr">${esc(cafe.address || 'No address')}</div>
+          </div>
+          <span class="chev">${icon('back')}</span>
+        </a>` : ''}
 
       <h2 class="section">Tasting profile</h2>
       <div class="glass radar-wrap">${radarSVG(b.ratings)}</div>
@@ -79,6 +94,9 @@ export async function render(root, id) {
 
       ${b.notes ? `<h2 class="section">Notes</h2>
         <div class="glass card-pad"><div class="notes-body">${esc(b.notes)}</div></div>` : ''}
+
+      <div style="height:20px"></div>
+      <button class="btn-block" data-card>${icon('card')} Make a share card</button>
 
       <div style="height:14px"></div>
       <div class="hint" style="text-align:center">Logged ${fmtDate(b.created_at)}</div>
@@ -137,6 +155,21 @@ export async function render(root, id) {
       node.querySelector('[data-again]').onclick = () => { close(); doImport(); };
       return node;
     });
+  });
+
+  const cardBtn = view.querySelector('[data-card]');
+  cardBtn.addEventListener('click', async () => {
+    const label = cardBtn.innerHTML;
+    cardBtn.disabled = true;
+    cardBtn.innerHTML = '<span class="spinner"></span> Drawing…';
+    try {
+      await shareBeanCard(b, { cafe });
+    } catch (err) {
+      toast(err.message || 'Could not make the card');
+    } finally {
+      cardBtn.disabled = false;
+      cardBtn.innerHTML = label;
+    }
   });
 
   root.appendChild(view);

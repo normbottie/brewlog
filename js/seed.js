@@ -11,6 +11,7 @@ const BEANS = [
     process: 'Washed', varietal: 'SL28, SL34', roast_level: 'Light', brew_method: 'V60',
     grind: '22g in, 360g out, 2:45', price: '24.00', weight_g: '250',
     flavor_notes: ['blackcurrant', 'grapefruit', 'cane sugar'],
+    cafe: 'Sey Coffee',
     ratings: { aromatics: 4, acidity: 5, sweetness: 4, aftertaste: 5, body: 3 },
     overall: 5,
     notes: 'Startlingly bright. The blackcurrant is not a tasting-note cliché here — it is just there, front and centre. Best at 94°C; hotter and the acidity turns sharp.',
@@ -21,6 +22,7 @@ const BEANS = [
     process: 'Natural', varietal: 'Heirloom', roast_level: 'Light', brew_method: 'AeroPress',
     grind: '15g, 200g water, 2:00', price: '21.50', weight_g: '250',
     flavor_notes: ['strawberry', 'jasmine', 'peach'],
+    cafe: 'Abraço',
     ratings: { aromatics: 5, acidity: 4, sweetness: 5, aftertaste: 4, body: 3 },
     overall: 5,
     notes: 'The aroma off the grinder is the best part of my morning. Syrupy as it cools.',
@@ -31,6 +33,7 @@ const BEANS = [
     process: 'Washed', varietal: 'Caturra, Bourbon', roast_level: 'Medium-Dark', brew_method: 'Espresso',
     grind: '18g in, 38g out, 28s', price: '18.00', weight_g: '340',
     flavor_notes: ['dark chocolate', 'toffee', 'baked apple'],
+    cafe: 'Variety Coffee',
     ratings: { aromatics: 3, acidity: 2, sweetness: 4, aftertaste: 4, body: 5 },
     overall: 4,
     notes: 'Forgiving. Holds up in milk without going flat. My default when I do not want to think about it.',
@@ -41,6 +44,7 @@ const BEANS = [
     process: 'Honey', varietal: 'Pink Bourbon', roast_level: 'Medium-Light', brew_method: 'Drip',
     grind: '60g/L, medium', price: '26.00', weight_g: '200',
     flavor_notes: ['red apple', 'honey', 'almond'],
+    cafe: 'Sey Coffee',
     ratings: { aromatics: 4, acidity: 3, sweetness: 5, aftertaste: 4, body: 4 },
     overall: 4,
     notes: 'Very round. Less dramatic than the Kenya but I reached for it more often, which probably says something.',
@@ -161,9 +165,21 @@ function toBlob(canvas) {
 export async function seedDemoData() {
   let n = 0;
 
+  /* Cafés first: the bags point at them, so the ids have to exist before a
+     bean can record where it came from. */
+  const cafeIds = new Map();
+  for (const spec of CAFES) {
+    const cafe = { ...blankCafe(), ...spec };
+    await saveCafe(cafe);
+    cafeIds.set(spec.name, cafe.id);
+    n++;
+  }
+
   for (const spec of BEANS) {
     const bean = { ...blankBean(), ...spec };
     delete bean.bag;
+    delete bean.cafe;
+    bean.cafe_id = cafeIds.get(spec.cafe) || '';
     bean.roast_date = new Date(Date.now() - Math.random() * 26 * 864e5).toISOString().slice(0, 10);
     await saveBean(bean);
 
@@ -172,11 +188,6 @@ export async function seedDemoData() {
     const img = await fileToImage(rawBlob);
     const studio = await localStudio(img, { backdrop: 'espresso' });
     await setBeanImage(bean.id, studio, rawBlob);
-    n++;
-  }
-
-  for (const spec of CAFES) {
-    await saveCafe({ ...blankCafe(), ...spec });
     n++;
   }
 

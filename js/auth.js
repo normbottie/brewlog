@@ -35,7 +35,11 @@ function store(next) {
 load();
 
 export function currentUser() { return session?.user || null; }
-export function isSignedIn() { return !!session?.access_token; }
+/* A refresh token alone still counts: the access token may have expired
+   while the app was closed, and the next request will renew it. Only a
+   session the server has actually rejected is cleared, and that clears
+   both. */
+export function isSignedIn() { return !!(session?.access_token || session?.refresh_token); }
 export function userId() { return session?.user?.id || null; }
 
 /** The URL Supabase should send you back to — must be allowlisted there. */
@@ -48,18 +52,36 @@ export function redirectURL() {
 async function authFetch(path, options = {}) {
   const cfg = getConfig();
   if (!cfg) throw new Error('Add your Supabase URL and key first');
-  const res = await fetch(`${cfg.url}/auth/v1/${path}`, {
-    ...options,
-    headers: {
-      apikey: cfg.key,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+
+  let res;
+  try {
+    res = await fetch(`${cfg.url}/auth/v1/${path}`, {
+      ...options,
+      headers: {
+        apikey: cfg.key,
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+  } catch (err) {
+    /* Couldn't reach the server at all. Flagged so callers can tell this
+       apart from a real rejection — signing someone out because their
+       train went into a tunnel is not acceptable. */
+    const e = new Error('Could not reach the sign-in server');
+    e.network = true;
+    throw e;
+  }
+
   const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
   if (!res.ok) {
-    throw new Error(json?.msg || json?.error_description || json?.message || `Auth error ${res.status}`);
+    const e = new Error(json?.msg || json?.error_description || json?.message || `Auth error ${res.status}`);
+    e.status = res.status;
+    e.code = json?.error_code || json?.error || '';
+    /* A 5xx is the server having a bad day, not a verdict on our token. */
+    if (res.status >= 500) e.network = true;
+    throw e;
   }
   return json;
 }
@@ -181,22 +203,100 @@ export async function captureSession() {
   return true;
 }
 
-/** A valid access token, refreshing if it is close to expiry. */
-export async function accessToken() {
-  if (!session?.access_token) return null;
-  if (session.expires_at && Date.now() < session.expires_at - 60000) return session.access_token;
-  if (!session.refresh_token) return session.access_token;
+/* Supabase rotates refresh tokens: each one may be redeemed once. A sync
+   fires several authorised requests, and if two of them find the token
+   expired at the same moment they both redeem the same refresh token —
+   the second gets "Already Used" and the user is thrown out. So all
+   callers share a single in-flight refresh. */
+let refreshing = null;
+
+/** The session another tab may have written since we last read it. */
+function storedSession() {
   try {
-    const payload = await authFetch('token?grant_type=refresh_token', {
-      method: 'POST',
-      body: JSON.stringify({ refresh_token: session.refresh_token }),
-    });
-    const next = shape(payload);
-    next.user = payload.user || session.user;
-    store(next);
-    return next.access_token;
-  } catch {
-    store(null);   // refresh token rejected — force a fresh sign-in
-    return null;
+    const raw = localStorage.getItem(LS_SESSION);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+async function redeem(token) {
+  const payload = await authFetch('token?grant_type=refresh_token', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: token }),
+  });
+  const next = shape(payload);
+  next.user = payload.user || session?.user || null;
+  store(next);
+  return next.access_token;
+}
+
+async function refreshSession() {
+  const token = session?.refresh_token;
+  if (!token) return null;
+  try {
+    return await redeem(token);
+  } catch (err) {
+    /* "Already used" usually means another tab rotated the token while we
+       were holding the old one. If localStorage now has a different token,
+       that is exactly what happened — take theirs and carry on. */
+    const spent = /already used|invalid refresh token/i.test(err?.message || '');
+    const latest = storedSession();
+    if (spent && latest?.refresh_token && latest.refresh_token !== token) {
+      session = latest;
+      emit();
+      if (latest.expires_at && Date.now() < latest.expires_at - 60000) return latest.access_token;
+      return redeem(latest.refresh_token);
+    }
+    throw err;
   }
 }
+
+/** A valid access token, refreshing if it is close to expiry. */
+export async function accessToken() {
+  if (!session?.access_token && !session?.refresh_token) return null;
+
+  const fresh = session.expires_at && Date.now() < session.expires_at - 60000;
+  if (fresh && session.access_token) return session.access_token;
+  if (!session.refresh_token) return session.access_token || null;
+
+  if (!refreshing) {
+    refreshing = refreshSession()
+      .catch((err) => {
+        /* Only a definitive answer from the server ends the session. A
+           network failure or a 5xx leaves it alone so the next attempt can
+           recover — the alternative is signing people out every time the
+           connection wobbles, which is the bug this replaced. */
+        if (!err?.network && (err?.status === 400 || err?.status === 401)) {
+          store(null);
+          return null;
+        }
+        return session?.access_token || null;
+      })
+      .finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+/* Another tab (or the installed app alongside the browser) may refresh
+   first and rotate the token out from under us. Adopt whatever it wrote
+   rather than trying to redeem a token that is now spent. */
+window.addEventListener('storage', (e) => {
+  if (e.key !== LS_SESSION) return;
+  try {
+    const next = e.newValue ? JSON.parse(e.newValue) : null;
+    if (JSON.stringify(next) === JSON.stringify(session)) return;
+    session = next;
+    emit();
+  } catch {}
+});
+
+/* Refresh a little before the app needs the token, so an expired session
+   is renewed on resume rather than discovered mid-request. */
+async function refreshIfStale() {
+  if (document.visibilityState !== 'visible') return;
+  if (!session?.refresh_token) return;
+  const soon = !session.expires_at || Date.now() > session.expires_at - 300000;
+  if (soon) { try { await accessToken(); } catch {} }
+}
+document.addEventListener('visibilitychange', refreshIfStale);
+window.addEventListener('focus', refreshIfStale);
+window.addEventListener('online', refreshIfStale);

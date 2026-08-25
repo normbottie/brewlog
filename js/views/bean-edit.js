@@ -2,6 +2,7 @@
 
 import {
   getBean, saveBean, blankBean, setBeanImage, beanImageURL, beanRawBlob, isForeign,
+  listCafes, getCafe,
   AXES, AXIS_LABELS, BREW_METHODS, ROAST_LEVELS, PROCESSES,
 } from '../store.js';
 import { h, esc, icon, stars, bindStars, toast, bindRange, goReplace } from '../ui.js';
@@ -22,6 +23,18 @@ export async function render(root, id) {
     return;
   }
   bean.ratings = { ...{ aromatics: 3, acidity: 3, sweetness: 3, aftertaste: 3, body: 3 }, ...(bean.ratings || {}) };
+  bean.cafe_id = bean.cafe_id || '';
+
+  /* Only your own cafés can be picked. A bean already pointing at one that
+     has since been deleted keeps its option, so opening the editor doesn't
+     quietly drop the link. */
+  const cafes = await listCafes({ shared: false });
+  if (bean.cafe_id && !cafes.some(c => c.id === bean.cafe_id)) {
+    const orphan = await getCafe(bean.cafe_id);
+    if (orphan) cafes.unshift(orphan);
+    else bean.cafe_id = '';
+  }
+  cafes.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
   /* image working state */
   let rawImg = null;      // HTMLImageElement of the original photo
@@ -116,6 +129,22 @@ export async function render(root, id) {
             <input id="f-weight" data-f="weight_g" inputmode="numeric" placeholder="250" value="${esc(bean.weight_g)}">
           </div>
         </div>
+      </div>
+
+      <h2 class="section">Where you got it</h2>
+      <div class="glass card-pad">
+        ${cafes.length ? `
+          <div class="field" style="margin-bottom:0">
+            <label for="f-cafe">Café or shop</label>
+            <select id="f-cafe" data-f="cafe_id">
+              <option value="">—</option>
+              ${cafes.map(c => `<option value="${esc(c.id)}" ${c.id === bean.cafe_id ? 'selected' : ''}>${esc(c.name || 'Untitled')}</option>`).join('')}
+            </select>
+            <div class="hint">Links this bag to a café you've logged.</div>
+          </div>`
+        : `<div class="hint" style="margin:0">
+             Log a café first and you'll be able to say where this bag came from.
+           </div>`}
       </div>
 
       <h2 class="section">How you brewed it</h2>

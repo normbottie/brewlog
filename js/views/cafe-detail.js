@@ -1,6 +1,6 @@
 /* One cafe — edit in place. */
 
-import { getCafe, saveCafe, removeCafe, isForeign, membersById } from '../store.js';
+import { getCafe, saveCafe, removeCafe, isForeign, membersById, beansForCafe, beanImageURL } from '../store.js';
 import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge, goReplace } from '../ui.js';
 
 export async function render(root, id) {
@@ -14,6 +14,9 @@ export async function render(root, id) {
   const hasPin = Number.isFinite(cafe.lat) && Number.isFinite(cafe.lng);
   const foreign = isForeign(cafe);
   const owner = foreign ? membersById().get(cafe.user_id) : null;
+  /* Shared scope: a café of yours can still be where a friend's bag came
+     from, and their entry is worth seeing next to your own. */
+  const beans = await beansForCafe(cafe.id, { shared: true });
 
   const view = h(`<div>
     <div class="topbar">
@@ -43,6 +46,21 @@ export async function render(root, id) {
           <a class="btn btn-sm" style="flex:1" target="_blank" rel="noopener"
              href="https://maps.apple.com/?ll=${cafe.lat},${cafe.lng}&q=${encodeURIComponent(cafe.name || 'Cafe')}">Directions</a>
         </div>` : ''}
+
+      ${beans.length ? `<h2 class="section">Beans from here</h2>
+        <div data-beans>${beans.map(b => `
+          <a class="glass cafe-row" href="#/bean/${esc(b.id)}">
+            <div class="avatar shot">
+              ${esc((b.name || b.roaster || '?').trim().charAt(0).toUpperCase())}
+              <img data-beanimg="${esc(b.id)}" alt="" hidden>
+            </div>
+            <div class="body">
+              <div class="nm">${esc(b.name || 'Untitled')}</div>
+              <div class="addr">${esc(b.roaster || '—')}</div>
+              ${b.overall ? `<div style="margin-top:5px">${stars(b.overall)}</div>` : ''}
+            </div>
+            <span class="chev">${icon('back')}</span>
+          </a>`).join('')}</div>` : ''}
 
       <h2 class="section">Notes</h2>
       <div class="glass card-pad">
@@ -90,6 +108,12 @@ export async function render(root, id) {
   });
 
   root.appendChild(view);
+
+  beans.forEach(async b => {
+    const url = await beanImageURL(b);
+    const img = view.querySelector(`[data-beanimg="${b.id}"]`);
+    if (url && img) { img.src = url; img.hidden = false; }
+  });
 
   let map = null;
   if (hasPin && window.L) {

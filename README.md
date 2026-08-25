@@ -4,6 +4,10 @@ A personal coffee tasting journal. Photograph a bag of beans, get a uniform
 studio-style shot of it, rate how it tasted on a five-axis radar, and keep
 track of the cafes you drink at.
 
+Bags link to the cafe they came from, every roaster gets a page averaging
+what you've had from them, and any bean can be turned into a share card
+image.
+
 Built as an installable PWA — no build step, no framework, no bundler. Push
 the folder to GitHub Pages and add it to your iPhone home screen.
 
@@ -130,6 +134,7 @@ js/
   auth.js           Supabase magic-link auth
   places.js         nearby cafes via OpenStreetMap Overpass
   radar.js          tasting radar SVG
+  card.js           the share card, drawn on a canvas
   ui.js             DOM helpers, sheets, stars, toasts
   seed.js           sample data
   views/            one module per screen
@@ -145,6 +150,7 @@ node test/shots.mjs      # screenshots every view, reports console errors
 node test/edit.mjs       # the edit-an-existing-bag image flow
 node test/auth.mjs       # sign-in UI and magic-link callback handling
 node test/imaging.mjs    # the local framing pipeline on synthetic bags
+node test/links.mjs      # bean-cafe links, roaster pages, the share card
 ```
 
 Output lands in `test/shots/`.
