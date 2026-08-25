@@ -2,7 +2,8 @@
 
 import * as sb from '../supabase.js';
 import { exportJSON, importJSON, sync, syncState, listBeans, listCafes, markSettingsDirty,
-         myProfile, saveMyProfile, sharingMembers } from '../store.js';
+         myProfile, saveMyProfile, sharingMembers,
+         isAdmin, allMembers, pendingMembers, setMemberApproval } from '../store.js';
 import {
   PROVIDERS, getImageAPIConfig, setImageAPIConfig, clearImageAPIConfig,
 } from '../imaging.js';
@@ -11,12 +12,34 @@ import { signIn, signOut, currentUser, isSignedIn, redirectURL } from '../auth.j
 import { GEMINI_PROXY } from '../config.js';
 import { seedDemoData } from '../seed.js';
 
+/* One member in the admin list. Pending accounts sort to the top and get
+   the primary button, since letting someone in is the action you came for. */
+function memberRow(m, me) {
+  const you = m.user_id === me;
+  const state = m.is_admin ? 'admin' : m.approved ? 'approved' : 'pending';
+  return `<div class="member-row ${state}">
+    <div style="min-width:0;flex:1">
+      <div class="nm">${esc(m.display_name || 'Unnamed member')}${you ? ' (you)' : ''}</div>
+      <div class="hint" style="margin:2px 0 0">${
+        m.is_admin ? 'Admin' : m.approved ? 'Approved' : 'Waiting for approval'
+      }${m.share_log ? ' · sharing' : ''}</div>
+    </div>
+    ${you || m.is_admin ? '' : m.approved
+      ? `<button class="btn-sm" data-revoke="${esc(m.user_id)}">Revoke</button>`
+      : `<button class="btn-sm btn-primary" data-approve="${esc(m.user_id)}">Approve</button>`}
+  </div>`;
+}
+
 export async function render(root) {
   const cfg = sb.getConfig();
   const img = getImageAPIConfig();
   const user = currentUser();
   const prof = myProfile();
   const others = sharingMembers();
+  const admin = isAdmin();
+  const members = admin ? allMembers() : [];
+  const pending = admin ? pendingMembers() : [];
+  const me = prof?.user_id || null;
   const beans = await listBeans();
   const cafes = await listCafes();
 
@@ -63,6 +86,19 @@ export async function render(root) {
           </div>` : `<div class="hint" style="margin-top:14px">
             Nobody else is sharing yet — the Everyone toggle appears once someone does.
           </div>`}
+
+          ${admin ? `
+          <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
+          <div style="font-weight:600;font-size:15px">
+            Members${pending.length ? ` · ${pending.length} waiting` : ''}
+          </div>
+          <div class="hint" style="margin:3px 0 12px">
+            You are an admin: you approve new accounts, and you can correct
+            anyone's entries.
+          </div>
+          <div data-members>${members.map(m => memberRow(m, me)).join('')}</div>
+          <div class="hint" data-memberstatus style="margin-top:9px"></div>
+          ` : ''}
 
           <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
           <button class="btn-block" data-signout>Sign out</button>
@@ -207,6 +243,35 @@ export async function render(root) {
     } finally {
       btn.disabled = false;
       btn.textContent = 'Save profile';
+    }
+  });
+
+  /* --- members (admins only) --- */
+  view.querySelector('[data-members]')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-approve], [data-revoke]');
+    if (!btn) return;
+    const approving = btn.hasAttribute('data-approve');
+    const id = btn.getAttribute(approving ? 'data-approve' : 'data-revoke');
+    const status = view.querySelector('[data-memberstatus]');
+
+    if (!approving) {
+      const ok = await confirmSheet('Revoke access?',
+        'They keep whatever is already on their device, but stop being able to sync or see anyone else\'s log.',
+        'Revoke');
+      if (!ok) return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+      await setMemberApproval(id, approving);
+      status.textContent = approving ? '✓ Approved.' : '✓ Access revoked.';
+      // the roster changed, so re-render from the fresh profiles
+      document.dispatchEvent(new CustomEvent('brewlog:data'));
+    } catch (err) {
+      status.textContent = err.message || 'Could not change that';
+      btn.disabled = false;
+      btn.textContent = approving ? 'Approve' : 'Revoke';
     }
   });
 

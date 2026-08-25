@@ -1,13 +1,14 @@
 /* Router + shell. */
 
 import { icon, toast } from './ui.js';
-import { queueSync, onSyncChange, syncState, loadCachedProfiles, needsOnboarding } from './store.js';
+import {
+  queueSync, onSyncChange, syncState, loadCachedProfiles, needsOnboarding, isApproved,
+} from './store.js';
 import { captureSession, isSignedIn, onAuthChange } from './auth.js';
 
 import * as Beans from './views/beans.js';
 import * as BeanDetail from './views/bean-detail.js';
 import * as BeanEdit from './views/bean-edit.js';
-import * as Roaster from './views/roaster.js';
 import * as Cafes from './views/cafes.js';
 import * as CafeDetail from './views/cafe-detail.js';
 import * as Settings from './views/settings.js';
@@ -43,7 +44,6 @@ const ROUTES = [
   [/^#\/bean\/([^/]+)\/edit$/, m => ({ view: BeanEdit, args: [m[1]], tab: 'beans' })],
   [/^#\/bean\/([^/]+)$/, m => ({ view: BeanDetail, args: [m[1]], tab: 'beans' })],
   [/^#\/new\/?$/, () => ({ view: BeanEdit, args: [null], tab: 'beans' })],
-  [/^#\/roaster\/(.+)$/, m => ({ view: Roaster, args: [m[1]], tab: 'beans' })],
   [/^#\/cafes\/?$/, () => ({ view: Cafes, args: [], tab: 'cafes' })],
   [/^#\/cafe\/([^/]+)$/, m => ({ view: CafeDetail, args: [m[1]], tab: 'cafes' })],
   [/^#\/settings\/?$/, () => ({ view: Settings, args: [], tab: 'settings' })],
@@ -108,6 +108,19 @@ async function doRoute() {
     return;
   }
 
+  /* Set up but not yet approved. The database already refuses them
+     everyone else's data; this is so the app says why instead of just
+     looking empty. */
+  if (!isApproved()) {
+    if (current && current.destroy) { try { current.destroy(); } catch {} }
+    current = null;
+    tabbar.hidden = true;
+    app.innerHTML = '';
+    window.scrollTo(0, 0);
+    Onboard.renderPending(app);
+    return;
+  }
+
   tabbar.hidden = false;
 
   const hash = location.hash || '#/beans';
@@ -146,7 +159,7 @@ document.addEventListener('brewlog:navigate', e => { location.hash = e.detail; }
 /* Re-render when a sync brings in new rows. Detail screens are included —
    otherwise an open bean kept showing whatever photo it had at first paint.
    Editors are deliberately excluded: a redraw would discard the edit. */
-const REFRESHABLE = /^#\/(beans\/?|cafes\/?|bean\/[^/]+|cafe\/[^/]+|roaster\/.+)$/;
+const REFRESHABLE = /^#\/(beans\/?|cafes\/?|bean\/[^/]+|cafe\/[^/]+)$/;
 document.addEventListener('brewlog:data', () => {
   if (REFRESHABLE.test(location.hash || '#/beans')) route();
 });

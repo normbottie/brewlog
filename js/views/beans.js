@@ -1,12 +1,14 @@
 /* Beans list — search, filter, grid of uniform bag shots. */
 
-import { listBeans, beanImageURL, syncState, membersById, sharingMembers, isForeign, roasterKey } from '../store.js';
+import {
+  listBeans, beanImageURL, syncState, membersById, sharingMembers, isForeign,
+  SCOPE_KEYS, scopeShared,
+} from '../store.js';
 import { h, esc, icon, stars, empty, ownerBadge, memberColor } from '../ui.js';
 import { radarMini } from '../radar.js';
 
-const state = { q: '', filter: 'all', shared: false };
-const LS_SHARED = 'brewlog.scope.beans';
-try { state.shared = localStorage.getItem(LS_SHARED) === '1'; } catch {}
+const LS_SHARED = SCOPE_KEYS.beans;
+const state = { q: '', filter: 'all', shared: scopeShared('beans') };
 
 export async function render(root) {
   const others = sharingMembers();
@@ -38,7 +40,6 @@ export async function render(root) {
         <button data-sc="all" aria-pressed="${state.shared}">Everyone</button>
       </div>` : ''}
       <div class="filter-scroll" data-filters></div>
-      <div data-roasterlink></div>
       <div data-results></div>
       <button class="btn-primary btn-block" data-new2 style="margin-top:18px">
         ${icon('plus')} Log a new bag
@@ -94,20 +95,7 @@ export async function render(root) {
     return true;
   }
 
-  /* Filtering to one roaster is the moment you're curious about them, so
-     that's where the door to their page belongs. */
-  const roasterLink = view.querySelector('[data-roasterlink]');
-  function paintRoasterLink() {
-    const name = state.filter.startsWith('roaster:') ? state.filter.slice(8) : '';
-    const key = roasterKey(name);
-    roasterLink.innerHTML = key
-      ? `<a class="inline-link" href="#/roaster/${encodeURIComponent(key)}">
-           Everything from ${esc(name)} →</a>`
-      : '';
-  }
-
   function paint() {
-    paintRoasterLink();
     const rows = beans.filter(match);
     if (!beans.length) {
       results.innerHTML = empty('bean', 'No beans yet',

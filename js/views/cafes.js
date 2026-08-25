@@ -3,8 +3,10 @@
 import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign } from '../store.js';
 import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, memberColor } from '../ui.js';
 import { findCafesAround, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
+import { clusterLayer } from '../cluster.js';
 
 let mapRef = null;
+let clusters = null;
 
 const scope = { shared: false };
 const LS_SHARED = 'brewlog.scope.cafes';
@@ -214,6 +216,10 @@ export async function render(root) {
   const map = L.map('map', { zoomControl: true, attributionControl: true })
     .setView(pinned.length ? [pinned[0].lat, pinned[0].lng] : [40.7128, -74.006], pinned.length ? 13 : 11);
   mapRef = map;
+  /* A seam for the tests: clustering is a function of zoom, and driving
+     that through the zoom control one click at a time makes for a test
+     that checks the control more than the clustering. Reading only. */
+  window.__brewlogMap = map;
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 20,
@@ -232,17 +238,35 @@ export async function render(root) {
     });
   };
 
-  const group = [];
-  pinned.forEach(c => {
-    const m = L.marker([c.lat, c.lng], { icon: ownerPin(c) }).addTo(map);
+  /* Pins that overlap are merged into a count, splitting apart as you zoom
+     in — a dozen cafés in one neighbourhood were otherwise a single
+     unreadable pile. */
+  const pinFor = (c) => {
+    const m = L.marker([c.lat, c.lng], { icon: ownerPin(c) });
     const who = isForeign(c) ? members.get(c.user_id)?.display_name || 'Member' : null;
     m.bindPopup(`<strong>${esc(c.name || 'Untitled')}</strong><br>
       <span style="color:#B4A392">${'★'.repeat(c.rating)}${'☆'.repeat(5 - c.rating)}</span><br>
       ${who ? `<span style="color:#B4A392">rated by ${esc(who)}</span><br>` : ''}
       <a href="#/cafe/${esc(c.id)}" style="color:#E4C79A">Open</a>`);
-    group.push([c.lat, c.lng]);
-  });
-  if (group.length > 1) map.fitBounds(group, { padding: [40, 40] });
+    return m;
+  };
+
+  const clusterIcon = (group) => {
+    const size = group.length > 24 ? 46 : group.length > 8 ? 41 : 36;
+    return L.divIcon({
+      className: '',
+      html: `<div class="pin-cluster" style="width:${size}px;height:${size}px">${group.length}</div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  };
+
+  clusters = clusterLayer(map, { marker: pinFor, clusterIcon });
+  clusters.set(pinned);
+
+  if (pinned.length > 1) {
+    map.fitBounds(pinned.map(c => [c.lat, c.lng]), { padding: [40, 40] });
+  }
 
   /* Tapping the map drops a draggable pin you can nudge into place; the
      details sheet opens alongside it, and the pin clears if you cancel. */
@@ -279,7 +303,12 @@ export async function render(root) {
     );
   }
 
-  return { destroy() { if (mapRef) { mapRef.remove(); mapRef = null; } } };
+  return {
+    destroy() {
+      clusters = null;   // its layer goes with the map
+      if (mapRef) { mapRef.remove(); mapRef = null; }
+    },
+  };
 }
 
 function whenLeaflet() {

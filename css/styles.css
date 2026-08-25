@@ -464,6 +464,18 @@ select {
   background: linear-gradient(163deg, rgba(228,199,154,.28), rgba(201,168,124,.15));
   border-color: rgba(228,199,154,.5); color: var(--tan-bright); font-weight: 620;
 }
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--glass-brd);
+}
+.member-row:first-child { border-top: none; }
+.member-row .nm { font-weight: 570; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-row.pending .nm { color: var(--tan-bright); }
+.member-row button { flex: 0 0 auto; min-width: 84px; }
+
 .read-only-note {
   display: flex; align-items: center; gap: 9px;
   font-size: 13px; color: var(--text-muted);
@@ -491,22 +503,54 @@ select {
    Detail view
    ============================================================ */
 
-.hero {
-  position: relative;
-  border-radius: var(--radius-xl);
+/* Bean header: portrait beside the facts. A full-bleed 4:5 hero spent the
+   whole first screen on the photo and pushed every fact below the fold. */
+.bean-head {
+  display: flex;
+  gap: 15px;
+  padding: 14px;
+  margin-bottom: 14px;
+  align-items: flex-start;
+}
+.bean-head .portrait {
+  flex: 0 0 auto;
+  width: 38%;
+  max-width: 156px;
+  min-width: 104px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  margin-bottom: 18px;
+  cursor: zoom-in;
+  transition: width .22s var(--ease), max-width .22s var(--ease);
 }
-.hero img { width: 100%; display: block; aspect-ratio: 4/5; object-fit: cover; }
-.hero .fade {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 55%;
-  background: linear-gradient(to top, rgba(11,9,8,.94), transparent);
+.bean-head .portrait img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 4/5;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(70% 55% at 50% 34%, rgba(201,168,124,.20), transparent 70%),
+    linear-gradient(178deg, #241C17, #14100D);
 }
-.hero .cap { position: absolute; left: 20px; right: 20px; bottom: 18px; }
-.hero .cap h2 { margin: 0; font-size: 25px; letter-spacing: -.022em; line-height: 1.16; }
-.hero .cap .roaster { color: var(--tan); font-size: 14px; margin-top: 4px; font-weight: 550; }
+.bean-head .portrait.no-photo img { min-height: 150px; }
+
+/* Tapping the photo trades the density back for a proper look at the bag. */
+.bean-head.expanded { flex-direction: column; }
+.bean-head.expanded .portrait { width: 100%; max-width: none; cursor: zoom-out; }
+
+.bean-head .head-meta { min-width: 0; flex: 1; padding-top: 2px; }
+.bean-head h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; line-height: 1.18; }
+.bean-head .roaster { color: var(--tan); font-size: 13.5px; margin-top: 3px; font-weight: 550; }
+
+.head-facts { margin: 10px 0 0; display: grid; gap: 6px 10px; }
+.head-facts dt {
+  font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 620;
+}
+.head-facts dd { margin: 2px 0 0; font-size: 14px; font-weight: 550; line-height: 1.3; }
 
 .kv { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--glass-brd); border-radius: var(--radius-md); overflow: hidden; }
 .kv > div { background: rgba(20,16,13,.66); padding: 13px 15px; }
@@ -523,6 +567,47 @@ select {
   padding: 10px 6px 4px;
   display: flex;
   justify-content: center;
+}
+
+/* The five slider rows restated exactly what the radar already showed, at
+   the cost of most of a screen. The numbers keep the precision; the shape
+   stays the radar's job. */
+.tasting { padding: 4px 4px 10px; }
+.tasting .radar { max-width: 330px; }
+.axis-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 6px 8px 2px;
+}
+.axis-stat { text-align: center; min-width: 0; }
+.axis-stat .n {
+  font-size: 17px; font-weight: 640; color: var(--tan-bright);
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+.axis-stat .k {
+  font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 620; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Paging between bags */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 8px;
+}
+.pager button {
+  width: 46px; height: 46px; padding: 0; flex: 0 0 auto;
+  border-radius: 50%;
+}
+.pager button > svg { width: 21px; height: 21px; }
+.pager [data-next] > svg { transform: rotate(180deg); }
+.pager .pos {
+  flex: 1; text-align: center; font-size: 13px;
+  color: var(--text-faint); font-weight: 560;
+  font-variant-numeric: tabular-nums;
 }
 .radar { width: 100%; max-width: 400px; height: auto; display: block; }
 .radar .grid-line  { stroke: rgba(255,240,220,.13); stroke-width: 1; fill: none; }
@@ -665,6 +750,22 @@ input[type=range]::-moz-range-thumb {
   background: linear-gradient(163deg, var(--tan-bright), #A98A62);
   border: 2px solid rgba(255,245,232,.65);
   box-shadow: 0 5px 14px rgba(0,0,0,.6);
+}
+
+/* Merged pins. Round rather than teardrop, so a cluster never reads as a
+   single café that happens to have a number on it. */
+.pin-cluster {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(163deg, var(--tan-bright), #A98A62);
+  border: 2px solid rgba(255,245,232,.75);
+  box-shadow: 0 6px 18px rgba(0,0,0,.62), 0 0 0 6px rgba(201,168,124,.18);
+  color: #1B1410;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
 
 /* ============================================================
@@ -855,68 +956,6 @@ input[type=range]::-moz-range-thumb {
 #ptr.armed .spinner { border-top-color: var(--tan-bright); }
 #ptr.loading { transform: translate(-50%, 16px) !important; transition: transform .2s; }
 #ptr.loading .spinner { animation-play-state: running; }
-
-/* ============================================================
-   Links between things — bean ↔ café ↔ roaster
-   ============================================================ */
-
-/* Rows that navigate are anchors, not buttons, so a long press offers
-   "open in new tab" and the hash lands in history like any other link. */
-a.btn { text-decoration: none; }
-a.cafe-row { text-decoration: none; color: inherit; }
-a.cafe-row:active { transform: scale(.988); }
-
-/* Bag thumbnails fall back to the initial rather than an empty square: a
-   bean logged on another device has its row long before its photo. */
-.cafe-row .avatar.shot { position: relative; overflow: hidden; }
-.cafe-row .avatar.shot img {
-  position: absolute;
-  inset: 0;
-  width: 100%; height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.cafe-row .avatar.shot img[hidden] { display: none; }
-
-.cafe-row .chev {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  color: var(--text-faint);
-  transform: rotate(180deg);
-}
-.cafe-row .chev svg { width: 19px; height: 19px; }
-
-/* The roaster name under a bag title is a door, so it has to look like one. */
-.hero .cap a.roaster {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(201,168,124,.42);
-  padding-bottom: 1px;
-}
-.hero .cap a.roaster::after { content: "›"; font-size: 15px; opacity: .8; }
-
-.inline-link {
-  display: inline-block;
-  margin: 2px 0 12px;
-  color: var(--tan);
-  font-size: 13.5px;
-  font-weight: 600;
-  text-decoration: none;
-}
-.inline-link:active { opacity: .6; }
-
-.stat-row { display: flex; align-items: stretch; text-align: center; }
-.stat-row .stat { flex: 1; }
-.stat-row .stat + .stat { border-left: 1px solid var(--glass-brd); }
-.stat-row .big { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
-.stat-row .lbl {
-  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--text-faint); font-weight: 620; margin-top: 4px;
-}
-.stat-row .stars svg { width: 15px; height: 15px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }

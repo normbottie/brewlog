@@ -4,8 +4,60 @@
    so nobody feels they're committing to something. */
 
 import { h, esc } from '../ui.js';
-import { saveMyProfile, finishOnboarding, sharingMembers } from '../store.js';
-import { currentUser } from '../auth.js';
+import { saveMyProfile, finishOnboarding, sharingMembers, myProfile, sync } from '../store.js';
+import { currentUser, signOut } from '../auth.js';
+
+/* Signed in, set up, but not yet let in. Deliberately a dead end rather
+   than a half-working app: an unapproved account can read nothing but its
+   own rows, so showing the tabs would only offer empty screens. */
+export function renderPending(root) {
+  const user = currentUser();
+  const view = h(`<div class="view" style="display:flex;flex-direction:column;justify-content:center;min-height:78vh">
+    <div style="text-align:center;margin-bottom:22px">
+      <img src="./icons/icon-180.png" alt="" style="width:72px;height:72px;border-radius:21px;box-shadow:var(--shadow-lg)">
+      <h1 style="font-size:24px;font-weight:680;letter-spacing:-.02em;margin:15px 0 6px">
+        Waiting to be let in
+      </h1>
+      <div class="hint" style="margin:0">
+        ${esc(myProfile()?.display_name || 'Your account')} is set up. An admin needs to
+        approve it before your log opens.
+      </div>
+    </div>
+    <div class="glass card-pad">
+      <div class="hint" style="margin:0 0 14px">
+        Signed in as ${esc(user?.email || '')}. Nothing is lost while you wait —
+        check back once you have been approved.
+      </div>
+      <button class="btn-primary btn-block" data-recheck>Check again</button>
+      <div class="hint" data-pendstatus style="margin-top:10px"></div>
+      <div style="border-top:1px solid var(--glass-brd);margin:16px 0 13px"></div>
+      <button class="btn-block" data-signout>Sign out</button>
+    </div>
+  </div>`);
+
+  const status = view.querySelector('[data-pendstatus]');
+  view.querySelector('[data-recheck]').onclick = async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Checking…';
+    status.textContent = '';
+    try {
+      await sync();
+      // a successful approval re-routes through the data event; if we are
+      // still here, nothing has changed yet
+      status.textContent = 'Not yet — still waiting on an admin.';
+    } catch {
+      status.textContent = 'Could not reach the server. Try again in a moment.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Check again';
+    }
+  };
+  view.querySelector('[data-signout]').onclick = () => signOut();
+
+  root.appendChild(view);
+  return null;
+}
 
 /** "norm.bottie@gmail.com" -> "Norm Bottie" — a first guess, not a decision. */
 function nameFromEmail(email) {

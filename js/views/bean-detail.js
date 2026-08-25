@@ -1,12 +1,22 @@
-/* Single bean — hero shot, radar, details, notes. */
+/* Single bean — bag shot, radar, details, notes.
+
+   The header is deliberately a portrait beside the facts rather than a
+   full-bleed hero: at 4:5 a hero pushed everything worth reading below the
+   fold. Tapping the portrait still opens it full width. */
 
 import {
   getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById,
-  importBean, myBeanLike, cafeForBean, roasterKey,
+  importBean, myBeanLike, beanNeighbours, canEdit,
 } from '../store.js';
 import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
 import { radarSVG } from '../radar.js';
-import { shareBeanCard } from '../card.js';
+
+/* Five columns across a phone leaves no room for "Aromatics"; the radar
+   beside them already carries the full names. */
+const AXIS_SHORT = {
+  aromatics: 'Aroma', acidity: 'Acid', sweetness: 'Sweet',
+  aftertaste: 'Finish', body: 'Body',
+};
 
 export async function render(root, id) {
   const b = await getBean(id);
@@ -18,43 +28,54 @@ export async function render(root, id) {
 
   const foreign = isForeign(b);
   const owner = foreign ? membersById().get(b.user_id) : null;
-  const cafe = await cafeForBean(b);
-  const rKey = roasterKey(b.roaster);
+  /* Admins may correct anyone's entry; everyone else sees a shared one
+     read-only. `locked` is about the controls, `foreign` about ownership —
+     an admin editing someone else's bag is still not the owner of it. */
+  const locked = foreign && !canEdit(b);
+
+  /* The two facts most likely to be wanted at a glance sit beside the
+     photo; the rest go in the grid below rather than repeating. */
+  const headFacts = [
+    ['Origin', [b.origin, b.region].filter(Boolean).join(' · ')],
+    ['Brewed as', b.brew_method],
+  ].filter(([, v]) => v);
 
   const kv = [
-    ['Origin', [b.origin, b.region].filter(Boolean).join(' · ')],
     ['Process', b.process],
     ['Varietal', b.varietal],
     ['Roast', b.roast_level],
     ['Roasted', b.roast_date ? fmtDate(b.roast_date) : ''],
-    ['Brewed as', b.brew_method],
     ['Grind', b.grind],
     ['Price', b.price ? (b.weight_g ? `${b.price} · ${b.weight_g}g` : String(b.price)) : ''],
   ].filter(([, v]) => v);
+
+  const { prev, next, index, total } = await beanNeighbours(id);
 
   const view = h(`<div>
     <div class="topbar">
       <button class="icon-btn" data-back aria-label="Back">${icon('back')}</button>
       <div class="spacer"></div>
-      ${foreign ? '' : `<button class="icon-btn" data-edit aria-label="Edit">${icon('edit')}</button>
+      ${locked ? '' : `<button class="icon-btn" data-edit aria-label="Edit">${icon('edit')}</button>
       <button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>`}
     </div>
     <div class="view">
-      <div class="hero glass">
-        <img data-hero alt="${esc(b.name || 'Coffee bag')}"
-             src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-        <div class="fade"></div>
-        <div class="cap">
+      <div class="bean-head glass">
+        <button class="portrait" data-expand aria-label="Show the full photo">
+          <img data-hero alt="${esc(b.name || 'Coffee bag')}"
+               src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        </button>
+        <div class="head-meta">
           <h2>${esc(b.name || 'Untitled')}</h2>
-          ${b.roaster ? (rKey
-            ? `<a class="roaster link" href="#/roaster/${encodeURIComponent(rKey)}">${esc(b.roaster)}</a>`
-            : `<div class="roaster">${esc(b.roaster)}</div>`) : ''}
-          ${b.overall ? `<div style="margin-top:8px">${stars(b.overall)}</div>` : ''}
+          ${b.roaster ? `<div class="roaster">${esc(b.roaster)}</div>` : ''}
+          ${b.overall ? `<div style="margin-top:7px">${stars(b.overall)}</div>` : ''}
+          ${headFacts.length ? `<dl class="head-facts">${headFacts.map(([k, v]) =>
+            `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
         </div>
       </div>
 
       ${foreign ? `<div class="read-only-note" style="margin-bottom:10px">
-          ${ownerBadge(owner)} <span>Shared entry — read only</span></div>
+          ${ownerBadge(owner)} <span>${locked ? 'Shared entry — read only'
+            : 'Shared entry — you are editing it as an admin'}</span></div>
         <button class="btn-primary btn-block" data-import style="margin-bottom:16px">
           ${icon('plus')} Log my own
         </button>
@@ -65,27 +86,15 @@ export async function render(root, id) {
           ${b.flavor_notes.map(n => `<span class="chip">${esc(n)}</span>`).join('')}
         </div>` : ''}
 
-      ${cafe ? `<a class="glass cafe-row" href="#/cafe/${esc(cafe.id)}" style="margin-bottom:16px">
-          <div class="avatar">${esc((cafe.name || '?').trim().charAt(0).toUpperCase())}</div>
-          <div class="body">
-            <div class="hint" style="margin:0 0 1px">Got it at</div>
-            <div class="nm">${esc(cafe.name || 'Untitled')}</div>
-            <div class="addr">${esc(cafe.address || 'No address')}</div>
-          </div>
-          <span class="chev">${icon('back')}</span>
-        </a>` : ''}
-
       <h2 class="section">Tasting profile</h2>
-      <div class="glass radar-wrap">${radarSVG(b.ratings)}</div>
-      <div class="glass card-pad" style="margin-top:12px">
-        ${AXES.map(a => `<div class="slider-row">
-          <div class="lbl">${AXIS_LABELS[a]}</div>
-          <div style="flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.09);overflow:hidden">
-            <div style="height:100%;width:${((Number(b.ratings?.[a]) || 0) / 5) * 100}%;
-                 background:linear-gradient(90deg,rgba(201,168,124,.5),var(--tan-bright));border-radius:3px"></div>
-          </div>
-          <div class="val">${(Number(b.ratings?.[a]) || 0).toFixed(1)}</div>
-        </div>`).join('')}
+      <div class="glass tasting">
+        <div class="radar-wrap">${radarSVG(b.ratings)}</div>
+        <div class="axis-strip">
+          ${AXES.map(a => `<div class="axis-stat">
+            <div class="n">${(Number(b.ratings?.[a]) || 0).toFixed(1)}</div>
+            <div class="k" title="${esc(AXIS_LABELS[a])}">${esc(AXIS_SHORT[a] || AXIS_LABELS[a])}</div>
+          </div>`).join('')}
+        </div>
       </div>
 
       ${kv.length ? `<h2 class="section">Details</h2>
@@ -95,10 +104,12 @@ export async function render(root, id) {
       ${b.notes ? `<h2 class="section">Notes</h2>
         <div class="glass card-pad"><div class="notes-body">${esc(b.notes)}</div></div>` : ''}
 
-      <div style="height:20px"></div>
-      <button class="btn-block" data-card>${icon('card')} Make a share card</button>
+      ${total > 1 ? `<div class="pager">
+        <button data-prev aria-label="Previous bag">${icon('back')}</button>
+        <div class="pos">${index + 1} of ${total}</div>
+        <button data-next aria-label="Next bag">${icon('back')}</button>
+      </div>` : '<div style="height:14px"></div>'}
 
-      <div style="height:14px"></div>
       <div class="hint" style="text-align:center">Logged ${fmtDate(b.created_at)}</div>
     </div>
   </div>`);
@@ -157,24 +168,28 @@ export async function render(root, id) {
     });
   });
 
-  const cardBtn = view.querySelector('[data-card]');
-  cardBtn.addEventListener('click', async () => {
-    const label = cardBtn.innerHTML;
-    cardBtn.disabled = true;
-    cardBtn.innerHTML = '<span class="spinner"></span> Drawing…';
-    try {
-      await shareBeanCard(b, { cafe });
-    } catch (err) {
-      toast(err.message || 'Could not make the card');
-    } finally {
-      cardBtn.disabled = false;
-      cardBtn.innerHTML = label;
-    }
+  /* Paging. goReplace, not a push: walking twenty bags should not bury the
+     list under twenty back-presses. */
+  const goTo = (bean) => { if (bean) goReplace(`#/bean/${bean.id}`); };
+  view.querySelector('[data-prev]')?.addEventListener('click', () => goTo(prev));
+  view.querySelector('[data-next]')?.addEventListener('click', () => goTo(next));
+
+  const onKey = (e) => {
+    if (e.target.closest('input, textarea, select')) return;
+    if (e.key === 'ArrowLeft') goTo(prev);
+    else if (e.key === 'ArrowRight') goTo(next);
+  };
+  document.addEventListener('keydown', onKey);
+
+  view.querySelector('[data-expand]')?.addEventListener('click', (e) => {
+    e.currentTarget.closest('.bean-head').classList.toggle('expanded');
   });
 
   root.appendChild(view);
 
   const url = await beanImageURL(b);
   if (url) view.querySelector('[data-hero]').src = url;
-  else view.querySelector('.hero img').style.minHeight = '200px';
+  else view.querySelector('.portrait').classList.add('no-photo');
+
+  return { destroy() { document.removeEventListener('keydown', onKey); } };
 }

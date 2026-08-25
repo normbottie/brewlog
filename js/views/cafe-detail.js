@@ -1,6 +1,6 @@
 /* One cafe — edit in place. */
 
-import { getCafe, saveCafe, removeCafe, isForeign, membersById, beansForCafe, beanImageURL } from '../store.js';
+import { getCafe, saveCafe, removeCafe, isForeign, membersById, canEdit } from '../store.js';
 import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge, goReplace } from '../ui.js';
 
 export async function render(root, id) {
@@ -14,15 +14,14 @@ export async function render(root, id) {
   const hasPin = Number.isFinite(cafe.lat) && Number.isFinite(cafe.lng);
   const foreign = isForeign(cafe);
   const owner = foreign ? membersById().get(cafe.user_id) : null;
-  /* Shared scope: a café of yours can still be where a friend's bag came
-     from, and their entry is worth seeing next to your own. */
-  const beans = await beansForCafe(cafe.id, { shared: true });
+  // an admin may correct anyone's entry; for everyone else shared is read-only
+  const locked = foreign && !canEdit(cafe);
 
   const view = h(`<div>
     <div class="topbar">
       <button class="icon-btn" data-back aria-label="Back">${icon('back')}</button>
       <div class="spacer"></div>
-      ${foreign ? '' : `<button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>`}
+      ${locked ? '' : `<button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>`}
     </div>
     <div class="view">
       <div class="glass card-pad" style="text-align:center">
@@ -33,10 +32,11 @@ export async function render(root, id) {
         </div>
         <h2 style="margin:0;font-size:23px;letter-spacing:-.02em">${esc(cafe.name || 'Untitled')}</h2>
         <div class="hint" style="margin-top:5px">${esc(cafe.address || 'No address')}</div>
-        <div style="margin-top:14px" data-stars>${stars(cafe.rating, { size: 'lg', interactive: !foreign })}</div>
-        <div class="hint" style="margin-top:6px">${foreign ? '' : 'Tap to change the rating'}</div>
+        <div style="margin-top:14px" data-stars>${stars(cafe.rating, { size: 'lg', interactive: !locked })}</div>
+        <div class="hint" style="margin-top:6px">${locked ? '' : 'Tap to change the rating'}</div>
         ${foreign ? `<div class="read-only-note" style="margin-top:14px;justify-content:center">
-          ${ownerBadge(owner)} <span>Shared entry — read only</span></div>` : ''}
+          ${ownerBadge(owner)} <span>${locked ? 'Shared entry — read only'
+            : 'Shared entry — you are editing it as an admin'}</span></div>` : ''}
       </div>
 
       ${hasPin ? `<div id="map" style="margin-top:16px;height:240px"></div>
@@ -47,41 +47,26 @@ export async function render(root, id) {
              href="https://maps.apple.com/?ll=${cafe.lat},${cafe.lng}&q=${encodeURIComponent(cafe.name || 'Cafe')}">Directions</a>
         </div>` : ''}
 
-      ${beans.length ? `<h2 class="section">Beans from here</h2>
-        <div data-beans>${beans.map(b => `
-          <a class="glass cafe-row" href="#/bean/${esc(b.id)}">
-            <div class="avatar shot">
-              ${esc((b.name || b.roaster || '?').trim().charAt(0).toUpperCase())}
-              <img data-beanimg="${esc(b.id)}" alt="" hidden>
-            </div>
-            <div class="body">
-              <div class="nm">${esc(b.name || 'Untitled')}</div>
-              <div class="addr">${esc(b.roaster || '—')}</div>
-              ${b.overall ? `<div style="margin-top:5px">${stars(b.overall)}</div>` : ''}
-            </div>
-            <span class="chev">${icon('back')}</span>
-          </a>`).join('')}</div>` : ''}
-
       <h2 class="section">Notes</h2>
       <div class="glass card-pad">
-        <textarea data-notes ${foreign ? 'readonly' : ''} placeholder="What to order, seating, wifi…">${esc(cafe.notes)}</textarea>
+        <textarea data-notes ${locked ? 'readonly' : ''} placeholder="What to order, seating, wifi…">${esc(cafe.notes)}</textarea>
         <div class="field-row" style="margin-top:12px">
           <div class="field" style="margin:0">
             <label for="c-visit">Last visited</label>
-            <input id="c-visit" type="date" data-visit ${foreign ? 'disabled' : ''} value="${esc(cafe.visited_on || '')}">
+            <input id="c-visit" type="date" data-visit ${locked ? 'disabled' : ''} value="${esc(cafe.visited_on || '')}">
           </div>
         </div>
       </div>
 
       <div style="height:18px"></div>
-      ${foreign ? '' : '<button class="btn-primary btn-block" data-save>Save changes</button>'}
+      ${locked ? '' : '<button class="btn-primary btn-block" data-save>Save changes</button>'}
       <div class="hint" style="text-align:center;margin-top:12px">Added ${fmtDate(cafe.created_at)}</div>
     </div>
   </div>`);
 
   let rating = cafe.rating;
   const starBox = view.querySelector('[data-stars]');
-  if (!foreign) {
+  if (!locked) {
     bindStars(starBox, v => {
       rating = rating === v ? 0 : v;
       starBox.innerHTML = stars(rating, { size: 'lg', interactive: true });
@@ -108,12 +93,6 @@ export async function render(root, id) {
   });
 
   root.appendChild(view);
-
-  beans.forEach(async b => {
-    const url = await beanImageURL(b);
-    const img = view.querySelector(`[data-beanimg="${b.id}"]`);
-    if (url && img) { img.src = url; img.hidden = false; }
-  });
 
   let map = null;
   if (hasPin && window.L) {
