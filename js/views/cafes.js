@@ -213,7 +213,12 @@ export async function render(root) {
   /* ---- map ---- */
   await whenLeaflet();
   const pinned = cafes.filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lng));
-  const map = L.map('map', { zoomControl: true, attributionControl: true })
+  const map = L.map('map', {
+    zoomControl: true,
+    attributionControl: true,
+    doubleClickZoom: true,   // stated, since a click handler shares the gesture
+    tap: true,
+  })
     .setView(pinned.length ? [pinned[0].lat, pinned[0].lng] : [40.7128, -74.006], pinned.length ? 13 : 11);
   mapRef = map;
   /* A seam for the tests: clustering is a function of zoom, and driving
@@ -269,9 +274,19 @@ export async function render(root) {
   }
 
   /* Tapping the map drops a draggable pin you can nudge into place; the
-     details sheet opens alongside it, and the pin clears if you cancel. */
+     details sheet opens alongside it, and the pin clears if you cancel.
+
+     Held back a beat, because a double tap is two clicks: without the delay
+     the first one opened the add-a-café sheet over the top of the zoom you
+     were actually asking for. */
   let draft = null;
-  map.on('click', (e) => {
+  let dropTimer = null;
+
+  map.on('dblclick', () => { clearTimeout(dropTimer); dropTimer = null; });
+  map.on('click', (e) => { clearTimeout(dropTimer); dropTimer = setTimeout(() => dropPin(e), 260); });
+
+  function dropPin(e) {
+    dropTimer = null;
     if (draft) map.removeLayer(draft);
     draft = L.marker(e.latlng, { icon: pinIcon, draggable: true, autoPan: true }).addTo(map);
     draft.bindTooltip('Drag me to adjust', { permanent: true, direction: 'top', offset: [0, -26] }).openTooltip();
@@ -290,7 +305,7 @@ export async function render(root) {
     draft.on('dragstart', () => openSheetHandle?.close());
     draft.on('dragend', openSheet);
     openSheet();
-  });
+  }
 
   setTimeout(() => map.invalidateSize(), 120);
 

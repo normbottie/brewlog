@@ -596,22 +596,70 @@ function findText(node, depth = 0) {
   return '';
 }
 
+/* A known-good shot to anchor the look. Describing a backdrop and a camera
+   angle in words gets you somewhere near; showing an example gets renders
+   that actually sit together in the grid. Shipped small (~33 KB) because it
+   rides along with every render request. */
+const STYLE_REF_URL = './assets/style-reference.jpg';
+let styleRefPromise = null;
+
+function styleReference() {
+  if (!styleRefPromise) {
+    styleRefPromise = (async () => {
+      const res = await fetch(STYLE_REF_URL);
+      if (!res.ok) throw new Error(`reference ${res.status}`);
+      const blob = await res.blob();
+      return {
+        mime: blob.type || 'image/jpeg',
+        data: (await blobToDataURL(blob)).split(',')[1],
+      };
+    })().catch(() => null);   // a missing reference is not worth failing over
+  }
+  return styleRefPromise;
+}
+
+/* The reference is a different roaster's bag, so the danger is obvious: the
+   model borrowing its label instead of its lighting. Say so plainly. */
+const STYLE_REF_NOTE = [
+  'You are given TWO images.',
+  '',
+  'IMAGE 1 IS A STYLE REFERENCE ONLY, and it shows a DIFFERENT product. Match it for:',
+  'backdrop colour and its soft gradient, the direction and softness of the light, the',
+  'camera angle and height, how much of the frame the bag fills, where it sits in the',
+  'frame, and the contact shadow beneath it.',
+  '',
+  'Take NOTHING else from image 1. Its brand, its label, its wording, its colours, its',
+  'illustration and its bag shape must not appear in your output in any form. If you',
+  'find yourself reproducing any text visible in image 1, you have made a mistake.',
+  '',
+  'IMAGE 2 IS THE SUBJECT: the actual bag being photographed. Every detail of the',
+  'product itself — shape, colour, label, artwork and all of its text — comes from',
+  'image 2 and only from image 2.',
+].join(' ');
+
+const REF_LABEL_1 = 'IMAGE 1 — style reference. Copy its lighting, backdrop and framing. Do not copy its product or any of its text.';
+const REF_LABEL_2 = 'IMAGE 2 — the bag to photograph. Reproduce this product exactly.';
+
 async function geminiRender(model, blob, prompt) {
   const b64 = (await blobToDataURL(blob)).split(',')[1];
   const mime = blob.type || 'image/jpeg';
+  const ref = await styleReference();
+  const fullPrompt = ref ? `${prompt}\n\n${STYLE_REF_NOTE}` : prompt;
 
   /* 1. Interactions API — current path for the Nano Banana models. */
   let firstError = '';
   try {
+    const input = [{ type: 'text', text: fullPrompt }];
+    if (ref) {
+      input.push({ type: 'text', text: REF_LABEL_1 });
+      input.push({ type: 'image', mime_type: ref.mime, data: ref.data });
+      input.push({ type: 'text', text: REF_LABEL_2 });
+    }
+    input.push({ type: 'image', mime_type: mime, data: b64 });
+
     const res = await geminiFetch('/v1beta/interactions', {
       method: 'POST',
-      body: JSON.stringify({
-        model,
-        input: [
-          { type: 'text', text: prompt },
-          { type: 'image', mime_type: mime, data: b64 },
-        ],
-      }),
+      body: JSON.stringify({ model, input }),
     });
     const json = await res.json();
     if (res.ok) {
@@ -631,16 +679,17 @@ async function geminiRender(model, blob, prompt) {
   }
 
   /* 2. Legacy generateContent — still works for gemini-2.5-flash-image. */
+  const parts = [{ text: fullPrompt }];
+  if (ref) {
+    parts.push({ text: REF_LABEL_1 });
+    parts.push({ inline_data: { mime_type: ref.mime, data: ref.data } });
+    parts.push({ text: REF_LABEL_2 });
+  }
+  parts.push({ inline_data: { mime_type: mime, data: b64 } });
+
   const res = await geminiFetch(`/v1beta/models/${model}:generateContent`, {
     method: 'POST',
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: mime, data: b64 } },
-        ],
-      }],
-    }),
+    body: JSON.stringify({ contents: [{ parts }] }),
   });
   const json = await res.json();
   if (!res.ok) {

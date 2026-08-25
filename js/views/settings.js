@@ -120,7 +120,11 @@ export async function render(root) {
         `}
       </div>
 
-      <h2 class="section">Sync</h2>
+      <details class="fold" data-fold="sync">
+        <summary>
+          <span>Sync</span>
+          <span class="fold-note"><span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}" data-sync-dot></span></span>
+        </summary>
       <div class="glass card-pad">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
           <span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}" data-sync-dot></span>
@@ -146,8 +150,13 @@ export async function render(root) {
         <div class="hint" data-sbstatus style="margin-top:10px"></div>
         ${cfg ? `<button class="btn-ghost btn-block btn-sm" data-clear-sb style="margin-top:9px">Disconnect</button>` : ''}
       </div>
+      </details>
 
-      <h2 class="section">Bag photo rendering</h2>
+      <details class="fold" data-fold="render">
+        <summary>
+          <span>Bag photo rendering</span>
+          <span class="fold-note">${img ? esc(PROVIDERS[img.provider]?.label || img.provider) : (GEMINI_PROXY ? 'Built in' : 'Off')}</span>
+        </summary>
       <div class="glass card-pad">
         <div class="hint" style="margin-bottom:13px">
           ${GEMINI_PROXY
@@ -191,6 +200,7 @@ export async function render(root) {
           ${img ? `<button class="btn-danger" data-clear-img>Remove</button>` : ''}
         </div>
       </div>
+      </details>
 
       <h2 class="section">Your data</h2>
       <div class="glass card-pad">

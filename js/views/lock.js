@@ -43,8 +43,9 @@ export function render(root) {
       </div>
       <button class="btn-block" data-verify>Verify code</button>
       <div class="hint" style="margin-top:10px">
-        The email also contains a tappable link — it works too, but on iPhone it opens
-        in Safari, so from the installed app the code is the way in.
+        The email has a sign-in link too. Use the code if you added Brewlog to your
+        Home Screen — iPhone opens that link in Safari, so it would sign you in
+        there rather than here.
       </div>
     </div>
 

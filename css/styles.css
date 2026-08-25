@@ -273,6 +273,11 @@ select {
    Tab bar
    ============================================================ */
 
+/* An id selector outranks the browser's own `[hidden] { display: none }`,
+   so hiding the bar left an empty glass pill floating over the sign-in
+   screen. Restate it at matching specificity. */
+#tabbar[hidden] { display: none; }
+
 #tabbar {
   position: fixed;
   left: 50%;
@@ -464,6 +469,47 @@ select {
   background: linear-gradient(163deg, rgba(228,199,154,.28), rgba(201,168,124,.15));
   border-color: rgba(228,199,154,.5); color: var(--tan-bright); font-weight: 620;
 }
+/* Collapsible settings groups. <details> so the disclosure works without
+   JavaScript and reads correctly to a screen reader. */
+.fold { margin: 0 0 4px; }
+.fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 4px 11px;
+  font-size: 12.5px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  font-weight: 640;
+  color: var(--text-faint);
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after {
+  content: "";
+  width: 8px; height: 8px;
+  margin-left: auto;
+  border-right: 1.8px solid currentColor;
+  border-bottom: 1.8px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform .2s var(--ease);
+  flex: 0 0 auto;
+}
+.fold[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.fold > summary:focus-visible { outline: 2px solid var(--tan); outline-offset: 3px; border-radius: 8px; }
+/* A closed section still says what it is set to, so you know whether to open it */
+.fold-note {
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: none;
+  font-weight: 550;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .member-row {
   display: flex;
   align-items: center;
