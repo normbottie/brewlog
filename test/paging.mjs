@@ -68,7 +68,7 @@ async function open(hash) {
 /* ---- paging through bags ------------------------------------------- */
 let { ctx, page } = await open('#/bean/b3');
 const title = () => page.$eval('.bean-head h2', e => e.textContent.trim());
-const pos = () => page.$eval('.pager .pos', e => e.textContent.trim()).catch(() => '');
+const pos = () => page.$eval('.pager-pos', e => e.textContent.trim()).catch(() => '');
 
 check('the pager shows where you are', (await pos()) === '1 of 3', await pos());
 
@@ -106,7 +106,7 @@ await ctx.close();
 const keep = server.beans;
 server.beans = [bean(1, 'Only One')];
 ({ ctx, page } = await open('#/bean/b1'));
-check('no pager when there is only one bag', !(await page.$('.pager')), 'pager shown');
+check('no pager when there is only one bag', !(await page.$('.pager-pos')) && !(await page.$('.pager-btn')), 'pager shown');
 await ctx.close();
 server.beans = keep;
 

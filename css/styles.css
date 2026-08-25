@@ -43,13 +43,22 @@
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
+  min-height: 100%;
   overscroll-behavior-y: none;
 }
-html { background: #171310; }
+
+/* The base colour belongs on the root, not on body.
+
+   body used to be exactly one viewport tall (height: 100%) while the page
+   scrolled well past that, and a body background paints *over* the fixed
+   #ambient layer behind it. So the first viewport-height of the document
+   showed flat espresso and everything below it showed the warm ambient
+   gradient — a hard horizontal seam that slid up the screen as you
+   scrolled. On the root there is no box to run out of. */
+html { background: var(--espresso); }
 
 body {
-  background: var(--espresso);
+  background: transparent;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
                "Segoe UI", system-ui, sans-serif;
@@ -117,7 +126,9 @@ body {
    ============================================================ */
 
 #app {
-  min-height: 100%;
+  /* not 100%: body is auto-height now, and a percentage min-height against
+     an auto containing block resolves to nothing */
+  min-height: 100lvh;
   display: flex;
   flex-direction: column;
   max-width: 720px;
@@ -392,6 +403,13 @@ select {
   white-space: nowrap;
 }
 .chip-muted { background: rgba(255,255,255,.05); border-color: var(--glass-brd); color: var(--text-muted); }
+/* Outlined, so a place you have not been to never reads as a rated one. */
+.chip-want {
+  display: inline-block;
+  background: transparent;
+  border: 1px dashed rgba(228,199,154,.42);
+  color: var(--tan);
+}
 
 /* ---- shared-entry ownership ---- */
 .owner-badge {
@@ -637,23 +655,38 @@ select {
   overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Paging between bags */
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 20px 0 8px;
-}
-.pager button {
-  width: 46px; height: 46px; padding: 0; flex: 0 0 auto;
+/* Paging between bags. The buttons sit outside .bean-head rather than in
+   it, because .glass clips to its own rounded corners and would cut the
+   overlap clean off. */
+.head-wrap { position: relative; }
+.pager-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 42px; height: 42px;
+  padding: 0;
   border-radius: 50%;
+  background: rgba(30,24,20,.82);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid rgba(255,240,220,.16);
+  box-shadow: 0 8px 22px -6px rgba(0,0,0,.8);
+  color: var(--text);
 }
-.pager button > svg { width: 21px; height: 21px; }
-.pager [data-next] > svg { transform: rotate(180deg); }
-.pager .pos {
-  flex: 1; text-align: center; font-size: 13px;
-  color: var(--text-faint); font-weight: 560;
+.pager-btn:active { transform: translateY(-50%) scale(.9); }
+.pager-btn > svg { width: 20px; height: 20px; }
+.pager-btn.prev { left: -13px; }
+.pager-btn.next { right: -13px; }
+.pager-btn.next > svg { transform: rotate(180deg); }
+
+.pager-pos {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-weight: 560;
   font-variant-numeric: tabular-nums;
+  margin: -6px 0 12px;
 }
 .radar { width: 100%; max-width: 400px; height: auto; display: block; }
 .radar .grid-line  { stroke: rgba(255,240,220,.13); stroke-width: 1; fill: none; }
@@ -796,6 +829,13 @@ input[type=range]::-moz-range-thumb {
   background: linear-gradient(163deg, var(--tan-bright), #A98A62);
   border: 2px solid rgba(255,245,232,.65);
   box-shadow: 0 5px 14px rgba(0,0,0,.6);
+}
+
+/* Hollow: somewhere you mean to go, not somewhere you have been. */
+.pin.want {
+  background: rgba(24,19,16,.78);
+  border: 2.5px solid var(--tan-bright);
+  box-shadow: 0 5px 14px rgba(0,0,0,.55);
 }
 
 /* Merged pins. Round rather than teardrop, so a cluster never reads as a

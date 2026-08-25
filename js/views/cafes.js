@@ -1,6 +1,6 @@
 /* Cafes — map, list, star ratings. */
 
-import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign } from '../store.js';
+import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign, isWishlist } from '../store.js';
 import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, memberColor } from '../ui.js';
 import { findCafesAround, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
 import { clusterLayer } from '../cluster.js';
@@ -22,7 +22,11 @@ export async function render(root) {
     <div class="topbar">
       <div>
         <h1>Cafés</h1>
-        <div class="sub">${cafes.length} place${cafes.length === 1 ? '' : 's'} rated</div>
+        <div class="sub">${(() => {
+          const w = cafes.filter(isWishlist).length;
+          const v = cafes.length - w;
+          return [v ? `${v} visited` : '', w ? `${w} to try` : ''].filter(Boolean).join(' · ') || 'Nothing yet';
+        })()}</div>
       </div>
       <div class="spacer"></div>
       <button class="icon-btn" data-add aria-label="Add cafe">${icon('plus')}</button>
@@ -79,7 +83,20 @@ export async function render(root) {
         'You haven’t rated this one yet — look it up on the map to add it.');
       return;
     }
-    listEl.innerHTML = rows.map(c => {
+    /* Places you mean to try are a different kind of thing from places you
+       have an opinion about, so they get their own section rather than
+       sitting in the list behind an empty row of stars. */
+    const want = rows.filter(isWishlist);
+    const been = rows.filter(c => !isWishlist(c));
+    listEl.innerHTML =
+      (want.length ? `<h2 class="section">Want to visit · ${want.length}</h2>${cards(want)}` : '') +
+      (been.length
+        ? `${want.length ? `<h2 class="section">Visited · ${been.length}</h2>` : ''}${cards(been)}`
+        : '');
+  }
+
+  function cards(rows) {
+    return rows.map(c => {
       const foreign = isForeign(c);
       const owner = foreign ? members.get(c.user_id) : null;
       return `
@@ -91,7 +108,8 @@ export async function render(root) {
           <div class="nm">${esc(c.name || 'Untitled')}</div>
           <div class="addr">${esc(c.address || 'No address')}</div>
           <div style="margin-top:5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            ${stars(c.rating)}${foreign ? ownerBadge(owner) : ''}
+            ${isWishlist(c) ? '<span class="chip chip-want">Not visited yet</span>' : stars(c.rating)}
+            ${foreign ? ownerBadge(owner) : ''}
           </div>
         </div>
       </button>`;
@@ -233,12 +251,19 @@ export async function render(root) {
   }).addTo(map);
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 28] });
+  /* A hollow pin reads as "not been there yet" without needing a legend. */
   const ownerPin = (c) => {
-    if (!isForeign(c)) return pinIcon;
+    const want = isWishlist(c);
+    if (!isForeign(c)) {
+      if (!want) return pinIcon;
+      return L.divIcon({ className: '', html: '<div class="pin want"></div>',
+                         iconSize: [30, 30], iconAnchor: [15, 28] });
+    }
     const color = memberColor(members.get(c.user_id)?._slot ?? -1);
     return L.divIcon({
       className: '',
-      html: `<div class="pin" style="background:${color}"></div>`,
+      html: `<div class="pin${want ? ' want' : ''}" style="${
+        want ? `border-color:${color};color:${color}` : `background:${color}`}"></div>`,
       iconSize: [30, 30], iconAnchor: [15, 28],
     });
   };
@@ -402,7 +427,18 @@ export function addCafeSheet(seed, cafes, onDone) {
           ? `Pin set: ${seed.lat.toFixed(4)}, ${seed.lng.toFixed(4)}`
           : 'Search an address, or tap the map to drop a pin.'}</div>
       </div>
-      <div class="field">
+      <label class="share-row" style="margin-bottom:4px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px">Want to visit</div>
+          <div class="hint" style="margin:2px 0 0">
+            Somewhere to try. It moves to your visited list once you rate it.
+          </div>
+        </div>
+        <input type="checkbox" data-want>
+        <span class="switch"></span>
+      </label>
+
+      <div class="field" data-ratefield>
         <label>Rating</label>
         <div data-stars>${stars(0, { size: 'lg', interactive: true })}</div>
       </div>
@@ -417,6 +453,18 @@ export function addCafeSheet(seed, cafes, onDone) {
     bindStars(starBox, v => {
       rating = rating === v ? 0 : v;
       starBox.innerHTML = stars(rating, { size: 'lg', interactive: true });
+    });
+
+    /* Rating something you have not been to makes no sense, so the toggle
+       hides the stars rather than leaving them there to be misread. */
+    const wantEl = node.querySelector('[data-want]');
+    const rateField = node.querySelector('[data-ratefield]');
+    wantEl.addEventListener('change', () => {
+      rateField.hidden = wantEl.checked;
+      if (wantEl.checked) {
+        rating = 0;
+        starBox.innerHTML = stars(0, { size: 'lg', interactive: true });
+      }
     });
 
     const geoHint = node.querySelector('[data-geo]');
@@ -448,12 +496,14 @@ export function addCafeSheet(seed, cafes, onDone) {
       cafe.name = node.querySelector('[data-n]').value.trim();
       cafe.address = node.querySelector('[data-a]').value.trim();
       cafe.notes = node.querySelector('[data-notes]').value;
-      cafe.rating = rating;
+      cafe.rating = wantEl.checked ? 0 : rating;
+      // no visit date is what marks it as somewhere you still mean to go
+      cafe.visited_on = wantEl.checked ? '' : (cafe.visited_on || new Date().toISOString().slice(0, 10));
       if (!cafe.name) { toast('Give the café a name'); return; }
       await saveCafe(cafe);
       cafes.unshift(cafe);
       close();
-      toast('Café saved');
+      toast(wantEl.checked ? 'Added to want to visit' : 'Café saved');
       onDone && onDone();
       if (location.hash.startsWith('#/cafes')) {
         document.dispatchEvent(new CustomEvent('brewlog:data'));

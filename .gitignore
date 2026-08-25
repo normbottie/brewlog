@@ -2,3 +2,7 @@ node_modules/
 test/shots/
 .DS_Store
 .tools/
+
+# Held back: the deploy token has no `workflow` scope, so GitHub refuses
+# any push that touches this path. See the note in the session.
+.github/workflows/

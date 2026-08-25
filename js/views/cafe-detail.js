@@ -1,6 +1,6 @@
 /* One cafe — edit in place. */
 
-import { getCafe, saveCafe, removeCafe, isForeign, membersById, canEdit } from '../store.js';
+import { getCafe, saveCafe, removeCafe, isForeign, membersById, canEdit, isWishlist } from '../store.js';
 import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge, goReplace } from '../ui.js';
 
 export async function render(root, id) {
@@ -16,6 +16,7 @@ export async function render(root, id) {
   const owner = foreign ? membersById().get(cafe.user_id) : null;
   // an admin may correct anyone's entry; for everyone else shared is read-only
   const locked = foreign && !canEdit(cafe);
+  const want = isWishlist(cafe);
 
   const view = h(`<div>
     <div class="topbar">
@@ -32,8 +33,14 @@ export async function render(root, id) {
         </div>
         <h2 style="margin:0;font-size:23px;letter-spacing:-.02em">${esc(cafe.name || 'Untitled')}</h2>
         <div class="hint" style="margin-top:5px">${esc(cafe.address || 'No address')}</div>
+        ${want ? `<div class="chip chip-want" style="margin-top:14px">Not visited yet</div>
+          ${locked ? '' : `<button class="btn-primary btn-block" data-visited style="margin-top:14px">
+              Mark as visited
+            </button>
+            <div class="hint" style="margin-top:8px">Or rate it below — that counts as visiting.</div>`}` : ''}
         <div style="margin-top:14px" data-stars>${stars(cafe.rating, { size: 'lg', interactive: !locked })}</div>
-        <div class="hint" style="margin-top:6px">${locked ? '' : 'Tap to change the rating'}</div>
+        <div class="hint" style="margin-top:6px">${locked ? ''
+          : want ? 'Rating it moves it to your visited list' : 'Tap to change the rating'}</div>
         ${foreign ? `<div class="read-only-note" style="margin-top:14px;justify-content:center">
           ${ownerBadge(owner)} <span>${locked ? 'Shared entry — read only'
             : 'Shared entry — you are editing it as an admin'}</span></div>` : ''}
@@ -52,7 +59,7 @@ export async function render(root, id) {
         <textarea data-notes ${locked ? 'readonly' : ''} placeholder="What to order, seating, wifi…">${esc(cafe.notes)}</textarea>
         <div class="field-row" style="margin-top:12px">
           <div class="field" style="margin:0">
-            <label for="c-visit">Last visited</label>
+            <label for="c-visit">${want ? 'Visited on' : 'Last visited'}</label>
             <input id="c-visit" type="date" data-visit ${locked ? 'disabled' : ''} value="${esc(cafe.visited_on || '')}">
           </div>
         </div>
@@ -84,12 +91,24 @@ export async function render(root, id) {
     }
   });
 
+  view.querySelector('[data-visited]')?.addEventListener('click', async () => {
+    cafe.visited_on = new Date().toISOString().slice(0, 10);
+    cafe.notes = view.querySelector('[data-notes]').value;
+    cafe.rating = rating;
+    await saveCafe(cafe);
+    toast('Marked as visited');
+    document.dispatchEvent(new CustomEvent('brewlog:data'));
+  });
+
   view.querySelector('[data-save]')?.addEventListener('click', async () => {
     cafe.rating = rating;
     cafe.notes = view.querySelector('[data-notes]').value;
     cafe.visited_on = view.querySelector('[data-visit]').value;
+    // giving it stars means you have been, so date it if nothing else has
+    if (rating && !cafe.visited_on) cafe.visited_on = new Date().toISOString().slice(0, 10);
     await saveCafe(cafe);
     toast('Saved');
+    document.dispatchEvent(new CustomEvent('brewlog:data'));
   });
 
   root.appendChild(view);

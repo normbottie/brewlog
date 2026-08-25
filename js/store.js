@@ -66,6 +66,13 @@ export function blankBean() {
   };
 }
 
+/* A café you mean to try, rather than one you've been to. Derived rather
+   than stored in its own column: "no visit date and no rating" already
+   means exactly this, and inventing a column would break syncing for any
+   project that hasn't run the newest schema.sql. Rating it, or dating a
+   visit, graduates it off the list on its own. */
+export const isWishlist = (c) => !!c && !c.visited_on && !Number(c.rating);
+
 export function blankCafe() {
   return {
     id: uid(),

@@ -59,19 +59,26 @@ export async function render(root, id) {
       <button class="icon-btn btn-danger" data-del aria-label="Delete">${icon('trash')}</button>`}
     </div>
     <div class="view">
-      <div class="bean-head glass">
-        <button class="portrait" data-expand aria-label="Show the full photo">
-          <img data-hero alt="${esc(b.name || 'Coffee bag')}"
-               src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-        </button>
-        <div class="head-meta">
-          <h2>${esc(b.name || 'Untitled')}</h2>
-          ${b.roaster ? `<div class="roaster">${esc(b.roaster)}</div>` : ''}
-          ${b.overall ? `<div style="margin-top:7px">${stars(b.overall)}</div>` : ''}
-          ${headFacts.length ? `<dl class="head-facts">${headFacts.map(([k, v]) =>
-            `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+      <div class="head-wrap">
+        ${total > 1 ? `<button class="pager-btn prev" data-prev
+            aria-label="Previous bag">${icon('back')}</button>
+          <button class="pager-btn next" data-next
+            aria-label="Next bag">${icon('back')}</button>` : ''}
+        <div class="bean-head glass">
+          <button class="portrait" data-expand aria-label="Show the full photo">
+            <img data-hero alt="${esc(b.name || 'Coffee bag')}"
+                 src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+          </button>
+          <div class="head-meta">
+            <h2>${esc(b.name || 'Untitled')}</h2>
+            ${b.roaster ? `<div class="roaster">${esc(b.roaster)}</div>` : ''}
+            ${b.overall ? `<div style="margin-top:7px">${stars(b.overall)}</div>` : ''}
+            ${headFacts.length ? `<dl class="head-facts">${headFacts.map(([k, v]) =>
+              `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+          </div>
         </div>
       </div>
+      ${total > 1 ? `<div class="pager-pos">${index + 1} of ${total}</div>` : ''}
 
       ${foreign ? `<div class="read-only-note" style="margin-bottom:10px">
           ${ownerBadge(owner)} <span>${locked ? 'Shared entry — read only'
@@ -104,12 +111,7 @@ export async function render(root, id) {
       ${b.notes ? `<h2 class="section">Notes</h2>
         <div class="glass card-pad"><div class="notes-body">${esc(b.notes)}</div></div>` : ''}
 
-      ${total > 1 ? `<div class="pager">
-        <button data-prev aria-label="Previous bag">${icon('back')}</button>
-        <div class="pos">${index + 1} of ${total}</div>
-        <button data-next aria-label="Next bag">${icon('back')}</button>
-      </div>` : '<div style="height:14px"></div>'}
-
+      <div style="height:14px"></div>
       <div class="hint" style="text-align:center">Logged ${fmtDate(b.created_at)}</div>
     </div>
   </div>`);
