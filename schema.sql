@@ -357,6 +357,17 @@ end $$;
 -- -------------------------------------------------------------- storage --
 -- Bag images live at bag-images/<user-id>/<bean-id>.jpg.
 --
+-- The bucket is PRIVATE. It used to be public, which meant anyone who came
+-- by the URL of a bag photo could read it forever — and that URL was sitting
+-- in plain text in every synced row. The app now stores the storage *path*
+-- and mints a short-lived signed URL each time it reads one, so nothing
+-- durable is a working link. Rows written before the change still hold a
+-- full public URL; the client folds those back to a path, so there is no
+-- data migration to run here.
+--
+-- ORDER MATTERS: making the bucket private breaks image loading in any copy
+-- of the app older than this change. Deploy the app first, then run this.
+--
 -- Everything below is best-effort. If your project does not let you touch
 -- storage from SQL, nothing here aborts the script — read the notices and
 -- finish those bits in the dashboard instead.
@@ -364,11 +375,11 @@ end $$;
 do $$
 begin
   insert into storage.buckets (id, name, public)
-  values ('bag-images', 'bag-images', true)
-  on conflict (id) do update set public = true;
-  raise notice 'Storage: bucket bag-images ready.';
+  values ('bag-images', 'bag-images', false)
+  on conflict (id) do update set public = false;
+  raise notice 'Storage: bucket bag-images ready (private).';
 exception when others then
-  raise notice 'Storage: could not create the bucket (%). Create it by hand: Storage -> New bucket -> name it bag-images -> tick Public.', sqlerrm;
+  raise notice 'Storage: could not create the bucket (%). Create it by hand: Storage -> New bucket -> name it bag-images -> leave Public UNticked.', sqlerrm;
 end $$;
 
 do $$
@@ -376,10 +387,22 @@ declare
   stmt text;
 begin
   foreach stmt in array array[
+    /* Read mirrors the row policies exactly: your own folder always, another
+       member's when they share their log and you are approved, everything if
+       you are an admin. `anon` is gone — signing a URL now requires an
+       account, which is the whole point of the private bucket. */
     $p$drop policy if exists "bag images read" on storage.objects$p$,
     $p$create policy "bag images read" on storage.objects
-        for select to anon, authenticated
-        using (bucket_id = 'bag-images')$p$,
+        for select to authenticated
+        using (bucket_id = 'bag-images'
+               and (
+                 (storage.foldername(name))[1] = auth.uid()::text
+                 or public.is_admin()
+                 or (public.is_approved()
+                     and exists (select 1 from public.profiles p
+                                 where p.user_id::text = (storage.foldername(name))[1]
+                                   and p.share_log))
+               ))$p$,
     $p$drop policy if exists "bag images write" on storage.objects$p$,
     $p$create policy "bag images write" on storage.objects
         for insert to authenticated

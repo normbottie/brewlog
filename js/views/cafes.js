@@ -4,6 +4,7 @@ import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign,
 import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, memberColor } from '../ui.js';
 import { findCafesAround, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
 import { clusterLayer } from '../cluster.js';
+import { matches } from '../search.js';
 
 let mapRef = null;
 let clusters = null;
@@ -70,9 +71,10 @@ export async function render(root) {
 
   function paint() {
     paintFindWeb();
-    const q = qEl.value.trim().toLowerCase();
-    const rows = cafes.filter(c => !q ||
-      [c.name, c.address, c.notes].join(' ').toLowerCase().includes(q));
+    /* Folded on both sides. The apostrophe iOS substitutes as you type (’)
+       and the one on the keyboard (') are the same character as far as
+       finding "Sweet Caroline's" goes, and so is leaving it out. */
+    const rows = cafes.filter(c => matches([c.name, c.address, c.notes], qEl.value));
     if (!cafes.length) {
       listEl.innerHTML = empty('map', 'No cafés yet',
         'Add the places you drink at, rate them, and keep notes on what to order.');

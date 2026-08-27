@@ -6,6 +6,7 @@ import {
 } from '../store.js';
 import { h, esc, icon, stars, empty, ownerBadge, memberColor } from '../ui.js';
 import { radarMini } from '../radar.js';
+import { matches } from '../search.js';
 
 const LS_SHARED = SCOPE_KEYS.beans;
 const state = { q: '', filter: 'all', shared: scopeShared('beans') };
@@ -81,13 +82,9 @@ export async function render(root) {
   const results = view.querySelector('[data-results]');
 
   function match(b) {
-    const q = state.q.trim().toLowerCase();
-    if (q) {
-      const hay = [b.name, b.roaster, b.origin, b.region, b.process, b.varietal,
-        b.notes, b.brew_method, (b.flavor_notes || []).join(' ')]
-        .join(' ').toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+    const hay = [b.name, b.roaster, b.origin, b.region, b.process, b.varietal,
+      b.notes, b.brew_method, (b.flavor_notes || []).join(' ')];
+    if (!matches(hay, state.q)) return false;
     const f = state.filter;
     if (f === 'all') return true;
     if (f === 'top') return (b.overall || 0) >= 4;

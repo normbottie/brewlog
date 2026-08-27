@@ -44,7 +44,11 @@ function tx(store, mode, fn) {
     const s = t.objectStore(store);
     let out;
     try { out = fn(s); } catch (err) { reject(err); return; }
-    t.oncomplete = () => resolve(out && out.result !== undefined ? out.result : out);
+    /* `'result' in out` rather than a truthiness test on out.result: a get
+       that finds nothing has result === undefined, and the old check handed
+       the caller the IDBRequest itself. That object is truthy, so every
+       `if (row)` downstream passed and the next put threw DataCloneError. */
+    t.oncomplete = () => resolve(out && typeof out === 'object' && 'result' in out ? out.result : out);
     t.onerror = () => reject(t.error);
     t.onabort = () => reject(t.error);
   }));
@@ -53,6 +57,7 @@ function tx(store, mode, fn) {
 export const idb = {
   get:    (store, key)  => tx(store, 'readonly',  s => s.get(key)),
   all:    (store)       => tx(store, 'readonly',  s => s.getAll()),
+  keys:   (store)       => tx(store, 'readonly',  s => s.getAllKeys()),
   put:    (store, val)  => tx(store, 'readwrite', s => s.put(val)),
   putAll: (store, vals) => tx(store, 'readwrite', s => { vals.forEach(v => s.put(v)); return null; }),
   del:    (store, key)  => tx(store, 'readwrite', s => s.delete(key)),

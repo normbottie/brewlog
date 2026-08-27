@@ -209,7 +209,11 @@ export async function beanImageURL(bean) {
       blob = await sb.downloadImage(src);
       await putBlob(imgKey(bean.id), blob);
       await metaSet(imgSrcKey(bean.id), src);
-    } catch { return src; }
+    } catch {
+      /* `src` is a storage path now, not a URL — handing it to an <img> would
+         only paint a broken frame. An empty slot is the honest answer. */
+      return null;
+    }
   }
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
@@ -323,7 +327,11 @@ export async function brewImageURL(brew, size = 'thumb') {
       blob = await sb.downloadImage(src);
       await putBlob(key, blob);
       await metaSet(`${brewSrcKey(brew.id)}:${size}`, src);
-    } catch { return src; }
+    } catch {
+      // a storage path is not something an <img> can load — see beanImageURL
+      if (wantFull) return brewImageURL(brew, 'thumb');
+      return null;
+    }
   }
   /* Falling back to the thumbnail beats an empty frame while the full photo
      is still coming down — or when it never does. */
@@ -667,9 +675,10 @@ export async function sync() {
           if (!blob) { delete b._imgDirty; continue; }
           try {
             const base = await sb.uploadImage(`${owner}/${b.id}.jpg`, blob);
-            /* The path is stable across re-shoots, so stamp a version onto
-               the URL: it busts the storage CDN and gives other devices a
-               way to tell that the photo behind it changed. */
+            /* What lands in the row is the storage path, never a URL: the
+               bucket is private and any link to it expires. The path is
+               stable across re-shoots, so stamp a version onto it — that is
+               how another device tells that the photo behind it changed. */
             b.image_url = `${base}?v=${Date.now().toString(36)}`;
             await metaSet(imgSrcKey(b.id), b.image_url);
             delete b._imgDirty;
@@ -744,22 +753,190 @@ onAuthChange(async (s) => {
   else setState('off', 'Sign in to sync');
 });
 
-/* ---- export / import ---------------------------------------------- */
+/* ---- export / import ------------------------------------------------
+ *
+ * A backup that leaves the photos behind is not a backup: the bags are
+ * re-typable, the shot of the bag on your counter is not. So every blob in
+ * IndexedDB rides along base64-encoded — bag shots, the original camera
+ * frames kept for re-cropping, and both sizes of every brew photo.
+ *
+ * The file is assembled as a list of Blob fragments rather than one giant
+ * string. A hundred bags is tens of megabytes, and building that as a single
+ * JS string is how a phone runs out of memory mid-export; Blobs can be
+ * spilled to disk by the browser as they are created.
+ *
+ * Format (version 2):
+ *   { app, version, exported_at, beans[], cafes[], brews[], settings,
+ *     blobs: [ { key, type, data } ] }
+ * Version 1 files (rows only, no brews, no photos) still import.
+ */
 
-export async function exportJSON() {
-  const beans = await idb.all('beans');
-  const cafes = await idb.all('cafes');
-  return JSON.stringify({ app: 'brewlog', version: 1, exported_at: now(), beans, cafes }, null, 2);
+export const BACKUP_VERSION = 2;
+
+const TABLES = ['beans', 'cafes', 'brews'];
+
+/** Local-only bookkeeping that must not travel in a backup file. */
+function clean(row) {
+  const out = {};
+  for (const [k, v] of Object.entries(row)) if (!k.startsWith('_')) out[k] = v;
+  return out;
 }
 
-export async function importJSON(text) {
-  const data = JSON.parse(text);
-  if (!data || data.app !== 'brewlog') throw new Error('Not a Brewlog export file');
-  let n = 0;
-  for (const table of ['beans', 'cafes']) {
-    const rows = (data[table] || []).map(r => ({ ...r, _dirty: true }));
-    if (rows.length) { await idb.putAll(table, rows); n += rows.length; }
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = String(r.result || '');
+      resolve(s.slice(s.indexOf(',') + 1));
+    };
+    r.onerror = () => reject(r.error || new Error('Could not read a photo'));
+    r.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(b64, type) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: type || 'image/jpeg' });
+}
+
+/**
+ * Whole-log backup, photos included.
+ * @param {(done:number, total:number) => void} [onProgress] photo counter
+ * @returns {Promise<{ blob: Blob, counts: object }>}
+ */
+export async function exportBackup(onProgress) {
+  const rows = {};
+  for (const t of TABLES) rows[t] = (await idb.all(t)).map(clean);
+
+  const parts = [];
+  parts.push('{"app":"brewlog"' +
+    `,"version":${BACKUP_VERSION}` +
+    `,"exported_at":${JSON.stringify(now())}`);
+  for (const t of TABLES) parts.push(`,${JSON.stringify(t)}:${JSON.stringify(rows[t])}`);
+
+  /* The image-API key lives here too. It is the user's own key in the user's
+     own file, and a restore that silently dropped it would look like a bug. */
+  let settings = null;
+  try { settings = getImageAPIConfig(); } catch {}
+  parts.push(`,"settings":${JSON.stringify(settings || null)}`);
+
+  parts.push(',"blobs":[');
+  const keys = await idb.keys('blobs');
+  let written = 0, bytes = 0;
+  for (const key of keys) {
+    const blob = await getBlob(key);
+    if (!blob) continue;
+    const fragment = (written ? ',' : '') + JSON.stringify({
+      key,
+      type: blob.type || 'image/jpeg',
+      data: await blobToBase64(blob),
+    });
+    // hand each fragment to the browser as a Blob so it need not stay in RAM
+    parts.push(new Blob([fragment]));
+    written++;
+    bytes += blob.size;
+    onProgress?.(written, keys.length);
   }
+  parts.push(']}');
+
+  return {
+    blob: new Blob(parts, { type: 'application/json' }),
+    counts: {
+      beans: rows.beans.length,
+      cafes: rows.cafes.length,
+      brews: rows.brews.length,
+      photos: written,
+      photoBytes: bytes,
+    },
+  };
+}
+
+/** Kept for callers that only want the rows as a string. */
+export async function exportJSON() {
+  const beans = (await idb.all('beans')).map(clean);
+  const cafes = (await idb.all('cafes')).map(clean);
+  const brews = (await idb.all('brews')).map(clean);
+  return JSON.stringify(
+    { app: 'brewlog', version: BACKUP_VERSION, exported_at: now(), beans, cafes, brews },
+    null, 2);
+}
+
+/**
+ * Restore a backup, merging rather than replacing.
+ *
+ * A row in the file only wins if the log has nothing under that id, or what
+ * it has is older — restoring an old backup on top of a live log must not
+ * undo this morning's tasting. Restored rows are marked dirty so they push
+ * to Supabase, which is what makes "export, wipe, import" actually recover
+ * an account rather than leaving everything stranded on one device.
+ */
+export async function importBackup(input, onProgress) {
+  const text = typeof input === 'string' ? input : await input.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('That file is not valid JSON'); }
+  if (!data || data.app !== 'brewlog') throw new Error('Not a Brewlog export file');
+
+  const counts = { rows: 0, skipped: 0, photos: 0 };
+  const accepted = new Set();
+
+  for (const t of TABLES) {
+    const incoming = data[t];
+    if (!Array.isArray(incoming) || !incoming.length) continue;
+    const local = new Map((await idb.all(t)).map(r => [r.id, r]));
+    const keep = [];
+    for (const raw of incoming) {
+      if (!raw || !raw.id) continue;
+      const row = clean(raw);
+      const mine = local.get(row.id);
+      if (mine && (mine.updated_at || '') > (row.updated_at || '')) { counts.skipped++; continue; }
+      keep.push({ ...row, _dirty: true });
+      accepted.add(row.id);
+    }
+    if (keep.length) { await idb.putAll(t, keep); counts.rows += keep.length; }
+  }
+
+  const blobs = Array.isArray(data.blobs) ? data.blobs : [];
+  const touched = new Map();   // id -> table the blob's key says it belongs to
+  for (let i = 0; i < blobs.length; i++) {
+    const b = blobs[i];
+    if (!b?.key || !b?.data) continue;
+    const [kind, id = ''] = String(b.key).split(':');
+    const table = kind === 'brew' ? 'brews' : 'beans';
+    /* Don't let an old photo land on a row the merge above just refused —
+       that would pair today's notes with last month's picture. */
+    if (!accepted.has(id) && (await getBlob(b.key))) continue;
+    try {
+      await putBlob(b.key, base64ToBlob(b.data, b.type));
+      counts.photos++;
+      touched.set(id, table);
+    } catch { /* one unreadable photo shouldn't sink the restore */ }
+    onProgress?.(i + 1, blobs.length);
+  }
+
+  /* A restored photo has no counterpart in storage yet (or points at another
+     account's folder), so flag its row to re-upload on the next sync. */
+  for (const [id, table] of touched) {
+    const row = await idb.get(table, id);
+    if (row?.id === id) { row._imgDirty = true; row._dirty = true; await idb.put(table, row); }
+  }
+
+  /* Only fill a gap — never overwrite a key this device is already using. */
+  const s = data.settings;
+  if (s?.key && !getImageAPIConfig()) {
+    try {
+      setImageAPIConfig(s.provider || 'gemini', s.key, s.model || '');
+      markSettingsDirty();
+    } catch {}
+  }
+
   queueSync(300);
-  return n;
+  return counts;
+}
+
+/** Older callers passed the file's text and wanted a row count back. */
+export async function importJSON(text) {
+  const { rows } = await importBackup(text);
+  return rows;
 }

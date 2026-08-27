@@ -129,7 +129,13 @@ export async function patch(table, query, body) {
   return jsonOrThrow(res);
 }
 
-/** Upload a blob to storage; returns the public URL. */
+/** Upload a blob to storage; returns the bucket-relative path it landed on.
+ *
+ * A path, not a URL, on purpose: the bucket is private, so a stored link
+ * would be a signed one — and a signed link expires, which makes it exactly
+ * the wrong thing to write into a database row that syncs to other devices.
+ * Rows carry the path; a fresh signature is minted at the moment of reading.
+ */
 export async function uploadImage(path, blob) {
   const cfg = getConfig();
   if (!cfg) return null;
@@ -145,11 +151,76 @@ export async function uploadImage(path, blob) {
     }
   );
   if (!res.ok && res.status !== 409) await jsonOrThrow(res);
-  return `${cfg.url}/storage/v1/object/public/${BUCKET}/${encodeURI(path)}`;
+  return path;
 }
 
-export async function downloadImage(url) {
-  const res = await fetch(url);
+/**
+ * The bucket-relative path inside whatever a row is carrying.
+ *
+ * Rows written before the bucket went private hold a full public URL, and
+ * they must keep working without a migration, so accept either shape. The
+ * `?v=` cache-buster that store.js stamps on is dropped — it is ours, not
+ * storage's, and signing a path that has one 404s.
+ */
+export function storagePath(src) {
+  let s = String(src || '').split('?')[0].split('#')[0];
+  if (!s) return '';
+  const marker = new RegExp(`/storage/v1/object/(?:public/|sign/|authenticated/)?${BUCKET}/`);
+  const m = marker.exec(s);
+  if (m) s = s.slice(m.index + m[0].length);
+  else if (/^https?:\/\//i.test(s)) return '';   // some other host's image
+  else s = s.replace(new RegExp(`^/?${BUCKET}/`), '').replace(/^\/+/, '');
+  try { s = decodeURIComponent(s); } catch {}
+  return s;
+}
+
+/** A short-lived signed URL for a private object. */
+export async function signedImageURL(path, expiresIn = 300) {
+  const cfg = getConfig();
+  if (!cfg || !path) return null;
+  const res = await fetch(
+    `${cfg.url}/storage/v1/object/sign/${BUCKET}/${encodeURI(path)}`,
+    {
+      method: 'POST',
+      headers: await headers(cfg, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ expiresIn }),
+    }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Could not sign that image (${res.status})`);
+  }
+  const body = await res.json();
+  // the API has spelled this both ways across versions
+  const rel = body?.signedURL || body?.signedUrl || '';
+  if (!rel) throw new Error('Storage returned no signed URL');
+  return /^https?:\/\//i.test(rel)
+    ? rel
+    : `${cfg.url}/storage/v1/${rel.replace(/^\/+/, '')}`;
+}
+
+/**
+ * Fetch a bag or brew photo. `src` is whatever the row holds: a path (new),
+ * or a full public URL (old rows, and any project whose bucket is still
+ * public because the latest schema.sql hasn't been applied yet). Signing is
+ * tried first; a public URL that is still public is the fallback, which is
+ * what keeps the app working either side of that deploy.
+ */
+export async function downloadImage(src) {
+  const path = storagePath(src);
+  if (path) {
+    try {
+      const url = await signedImageURL(path);
+      const res = await fetch(url);
+      if (res.ok) return res.blob();
+      if (!/^https?:\/\//i.test(String(src))) {
+        throw new Error(`Image download failed (${res.status})`);
+      }
+    } catch (err) {
+      if (!/^https?:\/\//i.test(String(src))) throw err;
+    }
+  }
+  const res = await fetch(src);
   if (!res.ok) throw new Error(`Image download failed (${res.status})`);
   return res.blob();
 }

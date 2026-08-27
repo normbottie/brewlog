@@ -1,7 +1,7 @@
 /* Settings — sync, image rendering, backup. */
 
 import * as sb from '../supabase.js';
-import { exportJSON, importJSON, sync, syncState, listBeans, listCafes, markSettingsDirty,
+import { exportBackup, importBackup, sync, syncState, listBeans, listCafes, markSettingsDirty,
          myProfile, saveMyProfile, sharingMembers,
          isAdmin, allMembers, pendingMembers, setMemberApproval } from '../store.js';
 import {
@@ -217,6 +217,11 @@ export async function render(root) {
           <button class="btn-block" data-import>Import backup</button>
           <button class="btn-block" data-seed>Load sample data</button>
         </div>
+        <div class="hint" style="margin-top:10px">
+          The backup carries every photo inside it — bag shots, the originals kept for
+          re-cropping, and your brew pictures — so it can take a moment and the file is
+          large. Importing merges by entry: anything newer here is left alone.
+        </div>
         <input type="file" accept="application/json,.json" hidden data-importfile>
       </div>
 
@@ -377,26 +382,58 @@ export async function render(root) {
   });
 
   /* --- data --- */
-  view.querySelector('[data-export]').onclick = async () => {
-    const json = await exportJSON();
-    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `brewlog-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+
+  view.querySelector('[data-export]').onclick = async (e) => {
+    const btn = e.currentTarget;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Packing photos…';
+    try {
+      /* Photos dominate the time, so count those rather than showing a
+         spinner that looks identical whether it is working or wedged. */
+      const { blob, counts } = await exportBackup((done, total) => {
+        btn.innerHTML = `<span class="spinner"></span>Packing photo ${done} of ${total}…`;
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `brewlog-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 20000);
+      toast(`${counts.beans} bags, ${counts.brews} brews, ${counts.photos} photos · ${mb(blob.size)}`);
+    } catch (err) {
+      toast(err.message || 'Export failed');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
   };
+
   const importFile = view.querySelector('[data-importfile]');
   view.querySelector('[data-import]').onclick = () => importFile.click();
   importFile.onchange = async () => {
     const f = importFile.files?.[0];
     if (!f) return;
+    const btn = view.querySelector('[data-import]');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Reading…';
     try {
-      const n = await importJSON(await f.text());
-      toast(`Imported ${n} record${n === 1 ? '' : 's'}`);
-      setTimeout(() => { location.hash = '#/beans'; }, 700);
+      const counts = await importBackup(f, (done, total) => {
+        btn.innerHTML = `<span class="spinner"></span>Restoring photo ${done} of ${total}…`;
+      });
+      const bits = [`${counts.rows} entr${counts.rows === 1 ? 'y' : 'ies'}`];
+      if (counts.photos) bits.push(`${counts.photos} photo${counts.photos === 1 ? '' : 's'}`);
+      if (counts.skipped) bits.push(`${counts.skipped} already newer here`);
+      toast(`Restored ${bits.join(', ')}`);
+      setTimeout(() => { location.hash = '#/beans'; }, 900);
     } catch (err) {
       toast(err.message || 'Import failed');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+      importFile.value = '';
     }
   };
   view.querySelector('[data-seed]').onclick = async (e) => {

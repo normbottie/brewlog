@@ -2,6 +2,8 @@
    Coverage is community-sourced: excellent in cities, patchier than Google in
    suburbs. Anything missing can still be added by dropping a pin. */
 
+import { fold } from './search.js';
+
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -152,7 +154,8 @@ function nominatimAddress(a = {}, fallback = '') {
 
 /** How well the place's own name answers what was typed. */
 function nameScore(name, q) {
-  const n = name.toLowerCase().trim(), t = q.toLowerCase().trim();
+  // same fold as the in-app search, so a typed ' ranks a listed ’ correctly
+  const n = fold(name), t = fold(q);
   if (n === t) return 0;
   if (n.startsWith(t)) return 1;
   if (n.includes(t)) return 2;
