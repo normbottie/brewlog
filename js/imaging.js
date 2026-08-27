@@ -62,6 +62,38 @@ function fit(img, max) {
   return c;
 }
 
+/* ================= brew photos ================= */
+
+const BREW_FULL = 1280;   // what you see when you open one
+const BREW_THUMB = 320;   // what rides along with every sync
+
+/** Square centre-crop, so the strip is a tidy grid whatever was shot. */
+function squareCrop(img, size) {
+  const side = Math.min(img.width, img.height);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+  return c;
+}
+
+/**
+ * Two sizes from one photo of a cup.
+ *
+ * The split is the whole reason brews stay affordable: only `thumb` is
+ * pulled by every device on every sync, and `full` waits until someone
+ * opens that particular brew.
+ *
+ * @returns {Promise<{thumb: Blob, full: Blob}>}
+ */
+export async function brewVariants(file) {
+  const img = await fileToImage(file);
+  const full = await canvasToBlob(fit(img, BREW_FULL), 'image/jpeg', 0.86);
+  const thumb = await canvasToBlob(squareCrop(img, BREW_THUMB), 'image/jpeg', 0.78);
+  return { thumb, full };
+}
+
 /* ================= background matting ================= */
 
 /* Perceptual-ish distance: weight chroma more than luminance so a shadow

@@ -655,6 +655,140 @@ select {
   overflow: hidden; text-overflow: ellipsis;
 }
 
+/* ============================================================
+   Brews — one cup, one day
+   ============================================================ */
+
+.brews-head { display: flex; align-items: baseline; gap: 8px; margin: 26px 4px 11px; }
+.brews-count {
+  font-size: 12.5px; color: var(--text-faint);
+  font-weight: 620; letter-spacing: .13em;
+}
+.linky {
+  background: none; border: none; padding: 0; backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: var(--tan); font-size: 12.5px; font-weight: 560;
+}
+.linky:active { transform: none; opacity: .6; }
+
+.brew-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+.brew-add {
+  border: 1px dashed rgba(201,168,124,.42);
+  background: rgba(201,168,124,.06);
+  border-radius: var(--radius-md);
+  aspect-ratio: 1/1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; padding: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.brew-add > svg { width: 22px; height: 22px; color: var(--tan-bright); }
+.brew-add span {
+  font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--tan); font-weight: 620;
+}
+.brew-tile {
+  position: relative; padding: 0; border: none;
+  border-radius: var(--radius-md); overflow: hidden;
+  background: #1a120c; aspect-ratio: 1/1;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  display: block;
+}
+.brew-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brew-when {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 14px 4px 5px;
+  background: linear-gradient(to top, rgba(8,6,5,.92), transparent);
+  font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); font-weight: 620; text-align: center;
+}
+/* The verdict has to survive being 21px wide, which is why it is a thumb
+   and not a row of stars. */
+.brew-verdict {
+  position: absolute; top: 5px; right: 5px; z-index: 2;
+  width: 21px; height: 21px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(12,9,7,.74);
+  border: 1px solid rgba(255,240,220,.16);
+  color: var(--tan-bright);
+}
+.brew-verdict.down { color: var(--text-muted); }
+.brew-foot {
+  margin-top: 12px; padding-top: 11px;
+  border-top: 1px solid var(--glass-brd);
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.45;
+}
+
+/* count badge on a bag card */
+.brew-count {
+  position: absolute; top: 9px; right: 9px; z-index: 2;
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 9px 4px 7px; border-radius: 999px;
+  background: rgba(12,9,7,.72);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255,240,220,.16);
+  font-size: 11.5px; font-weight: 640; color: var(--tan-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the sheet's photo well */
+.brew-drop {
+  width: 100%; padding: 0; overflow: hidden;
+  border: 1px dashed rgba(201,168,124,.42);
+  background: rgba(201,168,124,.06);
+  border-radius: var(--radius-md);
+  display: block; text-align: center;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.brew-drop > div { padding: 30px 18px; }
+.brew-drop > div > svg { width: 30px; height: 30px; color: var(--tan); }
+.brew-drop img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block; }
+/* `display: block` above outranks the browser's [hidden] rule, so without
+   this the empty preview still reserved a full square. */
+.brew-drop img[hidden] { display: none; }
+
+.verdict { display: flex; gap: 10px; }
+.verdict button {
+  flex: 1; gap: 9px; padding: 13px; border-radius: 14px;
+  color: var(--text-muted); font-weight: 550; font-size: 15px;
+}
+.verdict button > svg { width: 21px; height: 21px; }
+.verdict button[aria-pressed="true"] {
+  background: linear-gradient(163deg, rgba(228,199,154,.28), rgba(201,168,124,.15));
+  border-color: rgba(228,199,154,.5);
+  color: var(--tan-bright); font-weight: 620;
+}
+/* "not great" is a verdict, not an error — it should not read as alarming */
+.verdict button[data-v="down"][aria-pressed="true"] {
+  background: rgba(255,255,255,.07);
+  border-color: rgba(255,240,220,.3);
+  color: var(--text);
+}
+
+.verdict-chip {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+  padding: 6px 12px 6px 10px; border-radius: 999px;
+  border: 1px solid rgba(228,199,154,.34);
+  background: rgba(201,168,124,.14);
+  color: var(--tan-bright);
+  font-size: 12px; font-weight: 620; letter-spacing: .04em; text-transform: uppercase;
+}
+.verdict-chip.down {
+  border-color: var(--glass-brd);
+  background: rgba(255,255,255,.05);
+  color: var(--text-muted);
+}
+
+.brew-hero { position: relative; border-radius: var(--radius-lg); }
+.brew-hero img {
+  width: 100%; display: block; aspect-ratio: 1/1; object-fit: cover;
+  background: linear-gradient(178deg, #241C17, #14100D);
+}
+.brew-loading {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: rgba(10,8,6,.35); pointer-events: none;
+}
+.brew-loading[hidden] { display: none; }
+
 /* Paging between bags. The buttons sit outside .bean-head rather than in
    it, because .glass clips to its own rounded corners and would cut the
    overlap clean off. */

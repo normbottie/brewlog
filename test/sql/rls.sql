@@ -99,3 +99,33 @@ select report('a plain member cannot edit another member''s bag',
   exists(select 1 from public.beans where name = 'Member Overwrote It'), false);
 
 reset role;
+
+-- ---- brews follow their bag's rules -----------------------------------
+insert into public.brews (id, user_id, bean_id, method, verdict)
+values ('bbbbbbbb-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000002',
+        'aaaaaaaa-0000-4000-8000-000000000001', 'Espresso', 'up')
+on conflict (id) do nothing;
+
+set role authenticated;
+
+select act_as('00000000-0000-4000-8000-000000000002');
+select report('a member reads their own brew',
+  exists(select 1 from public.brews where id = 'bbbbbbbb-0000-4000-8000-000000000001'), true);
+
+select act_as('00000000-0000-4000-8000-000000000003');
+select report('an approved member reads a shared brew',
+  exists(select 1 from public.brews where id = 'bbbbbbbb-0000-4000-8000-000000000001'), true);
+
+update public.brews set notes = 'not mine to write'
+ where id = 'bbbbbbbb-0000-4000-8000-000000000001';
+select report('but cannot edit it',
+  exists(select 1 from public.brews where notes = 'not mine to write'), false);
+
+select act_as('00000000-0000-4000-8000-000000000001');
+update public.brews set notes = 'admin fixed it'
+ where id = 'bbbbbbbb-0000-4000-8000-000000000001';
+select report('an admin can edit anyone''s brew',
+  exists(select 1 from public.brews where notes = 'admin fixed it'), true);
+
+reset role;

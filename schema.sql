@@ -59,12 +59,34 @@ create table if not exists public.cafes (
   deleted     boolean default false
 );
 
+-- One cup, on one day, from a particular bag. The bag keeps its own tasting
+-- profile; a brew never touches it. `verdict` is 'up', 'down', or null —
+-- null is the common case, since most cups get no opinion recorded.
+create table if not exists public.brews (
+  id          uuid primary key,
+  user_id     uuid references auth.users (id) on delete cascade,
+  bean_id     uuid,
+  brewed_on   text,
+  method      text,
+  recipe      text,
+  verdict     text,
+  notes       text,
+  image_url   text,
+  thumb_url   text,
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now(),
+  deleted     boolean default false
+);
+
 -- upgrading from a version without accounts
 alter table public.beans add column if not exists user_id uuid references auth.users (id) on delete cascade;
 alter table public.cafes add column if not exists user_id uuid references auth.users (id) on delete cascade;
 
 create index if not exists beans_user_updated_idx on public.beans (user_id, updated_at);
 create index if not exists cafes_user_updated_idx on public.cafes (user_id, updated_at);
+create index if not exists brews_user_updated_idx on public.brews (user_id, updated_at);
+-- the strip on a bean screen reads by bean, newest first
+create index if not exists brews_bean_idx on public.brews (bean_id, brewed_on desc);
 
 -- ------------------------------------------------------------- sharing --
 -- A member may opt in to letting other members READ their log. Nobody is
@@ -219,6 +241,34 @@ create policy "cafes delete own" on public.cafes
   for delete to authenticated
   using ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
 
+-- Brews follow their bag's rules exactly: yours always, other members' when
+-- they share and you are approved, everything when you are an admin.
+alter table public.brews enable row level security;
+
+drop policy if exists "brews readable" on public.brews;
+create policy "brews readable" on public.brews
+  for select to authenticated
+  using (
+    auth.uid() = user_id
+    or public.is_admin()
+    or (public.is_approved()
+        and exists (select 1 from public.profiles p
+                    where p.user_id = brews.user_id and p.share_log))
+  );
+drop policy if exists "brews insert own" on public.brews;
+create policy "brews insert own" on public.brews
+  for insert to authenticated
+  with check (auth.uid() = user_id and public.is_approved());
+drop policy if exists "brews update own" on public.brews;
+create policy "brews update own" on public.brews
+  for update to authenticated
+  using ((auth.uid() = user_id and public.is_approved()) or public.is_admin())
+  with check ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
+drop policy if exists "brews delete own" on public.brews;
+create policy "brews delete own" on public.brews
+  for delete to authenticated
+  using ((auth.uid() = user_id and public.is_approved()) or public.is_admin());
+
 -- Per-account app settings (currently the image-API key), so a second
 -- device picks them up after sign-in instead of asking again.
 create table if not exists public.settings (
@@ -236,6 +286,7 @@ create policy "own settings" on public.settings
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.beans to authenticated;
 grant select, insert, update, delete on public.cafes to authenticated;
+grant select, insert, update, delete on public.brews to authenticated;
 grant select, insert, update, delete on public.settings to authenticated;
 grant select, insert, update on public.profiles to authenticated;
 
@@ -361,5 +412,5 @@ notify pgrst, 'reload schema';
 
 do $$
 begin
-  raise notice 'Done. Tables: beans, cafes, settings, profiles. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
+  raise notice 'Done. Tables: beans, brews, cafes, settings, profiles. Next: set the Site URL and Redirect URLs under Authentication -> URL Configuration, then sign in from the app.';
 end $$;

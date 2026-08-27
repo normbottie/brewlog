@@ -1,7 +1,7 @@
 /* Minimal promise wrapper around IndexedDB. No dependencies. */
 
 const DB_NAME = 'brewlog';
-const DB_VERSION = 1;
+const DB_VERSION = 2;   // 2 adds `brews`
 
 let _db = null;
 
@@ -18,6 +18,11 @@ export function openDB() {
       if (!db.objectStoreNames.contains('cafes')) {
         const s = db.createObjectStore('cafes', { keyPath: 'id' });
         s.createIndex('updated_at', 'updated_at');
+      }
+      if (!db.objectStoreNames.contains('brews')) {
+        const s = db.createObjectStore('brews', { keyPath: 'id' });
+        s.createIndex('updated_at', 'updated_at');
+        s.createIndex('bean_id', 'bean_id');
       }
       // blobs: { key, blob } — keyed by `${kind}:${id}:${variant}`
       if (!db.objectStoreNames.contains('blobs')) {

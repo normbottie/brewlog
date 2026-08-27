@@ -11,6 +11,7 @@ import * as BeanDetail from './views/bean-detail.js';
 import * as BeanEdit from './views/bean-edit.js';
 import * as Cafes from './views/cafes.js';
 import * as CafeDetail from './views/cafe-detail.js';
+import * as BrewDetail from './views/brew-detail.js';
 import * as Settings from './views/settings.js';
 import * as Lock from './views/lock.js';
 import * as Onboard from './views/onboard.js';
@@ -44,6 +45,7 @@ const ROUTES = [
   [/^#\/bean\/([^/]+)\/edit$/, m => ({ view: BeanEdit, args: [m[1]], tab: 'beans' })],
   [/^#\/bean\/([^/]+)$/, m => ({ view: BeanDetail, args: [m[1]], tab: 'beans' })],
   [/^#\/new\/?$/, () => ({ view: BeanEdit, args: [null], tab: 'beans' })],
+  [/^#\/brew\/([^/]+)$/, m => ({ view: BrewDetail, args: [m[1]], tab: 'beans' })],
   [/^#\/cafes\/?$/, () => ({ view: Cafes, args: [], tab: 'cafes' })],
   [/^#\/cafe\/([^/]+)$/, m => ({ view: CafeDetail, args: [m[1]], tab: 'cafes' })],
   [/^#\/settings\/?$/, () => ({ view: Settings, args: [], tab: 'settings' })],
@@ -159,7 +161,7 @@ document.addEventListener('brewlog:navigate', e => { location.hash = e.detail; }
 /* Re-render when a sync brings in new rows. Detail screens are included —
    otherwise an open bean kept showing whatever photo it had at first paint.
    Editors are deliberately excluded: a redraw would discard the edit. */
-const REFRESHABLE = /^#\/(beans\/?|cafes\/?|bean\/[^/]+|cafe\/[^/]+)$/;
+const REFRESHABLE = /^#\/(beans\/?|cafes\/?|bean\/[^/]+|cafe\/[^/]+|brew\/[^/]+)$/;
 document.addEventListener('brewlog:data', () => {
   if (REFRESHABLE.test(location.hash || '#/beans')) route();
 });

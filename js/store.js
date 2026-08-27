@@ -146,6 +146,8 @@ export async function removeBean(id) {
   b.deleted = true;
   await save('beans', b);
   await delBlob(imgKey(id));
+  // a brew with no bag is an orphan nothing can reach — take them along
+  for (const brew of await listBrews(id)) await removeBrew(brew.id);
 }
 
 export async function removeCafe(id) {
@@ -212,6 +214,125 @@ export async function beanImageURL(bean) {
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
   urlCache.set(bean.id, { url, src });
+  return url;
+}
+
+/* ---- brews ---------------------------------------------------------- */
+
+/* One cup on one day. The bag keeps its tasting profile; a brew records
+   what happened this time — with `verdict` left null for most of them,
+   because most cups do not warrant an opinion. */
+
+export const BREW_VERDICTS = { up: 'Good one', down: 'Not great' };
+
+export function blankBrew(beanId, method = '') {
+  return {
+    id: uid(),
+    bean_id: beanId,
+    brewed_on: new Date().toISOString().slice(0, 10),
+    method,
+    recipe: '',
+    verdict: null,
+    notes: '',
+    image_url: '',
+    thumb_url: '',
+    created_at: now(),
+    updated_at: now(),
+    deleted: false,
+  };
+}
+
+/** A bag's brews, newest first. */
+export async function listBrews(beanId) {
+  const rows = await idb.all('brews');
+  return rows
+    .filter(b => !b.deleted && b.bean_id === beanId)
+    .sort((a, b) =>
+      String(b.brewed_on || '').localeCompare(String(a.brewed_on || '')) ||
+      String(b.created_at || '').localeCompare(String(a.created_at || '')));
+}
+
+export const getBrew = (id) => idb.get('brews', id);
+export const saveBrew = (b) => save('brews', b);
+
+/** How many brews each bag has, for the grid badges. */
+export async function brewCounts() {
+  const rows = await idb.all('brews');
+  const me = userId();
+  const counts = new Map();
+  for (const b of rows) {
+    if (b.deleted) continue;
+    if (b.user_id && b.user_id !== me) continue;   // count only your own
+    counts.set(b.bean_id, (counts.get(b.bean_id) || 0) + 1);
+  }
+  return counts;
+}
+
+export async function removeBrew(id) {
+  const b = await getBrew(id);
+  if (!b) return;
+  b.deleted = true;
+  await save('brews', b);
+  await delBlob(brewThumbKey(id));
+  await delBlob(brewFullKey(id));
+}
+
+export const brewThumbKey = (id) => `brew:${id}:thumb`;
+export const brewFullKey = (id) => `brew:${id}:full`;
+const brewSrcKey = (id) => `brewsrc:${id}`;
+
+const brewURLs = new Map();   // id -> { url, src, size }
+
+function releaseBrewURL(id) {
+  const c = brewURLs.get(id);
+  if (c) { URL.revokeObjectURL(c.url); brewURLs.delete(id); }
+}
+
+/** Store both sizes for a brew and mark it for upload. */
+export async function setBrewImage(brewId, thumbBlob, fullBlob) {
+  await putBlob(brewThumbKey(brewId), thumbBlob);
+  if (fullBlob) await putBlob(brewFullKey(brewId), fullBlob);
+  releaseBrewURL(brewId);
+  const brew = await getBrew(brewId);
+  if (brew) { brew._imgDirty = true; await save('brews', brew); }
+}
+
+/**
+ * Object URL for a brew photo.
+ * @param {'thumb'|'full'} size — thumbnails ride along with sync; the full
+ *   photo is only fetched when someone actually opens the brew, which is the
+ *   whole reason a bag with thirty cups doesn't cost thirty full images on
+ *   every device.
+ */
+export async function brewImageURL(brew, size = 'thumb') {
+  if (!brew) return null;
+  const wantFull = size === 'full';
+  const src = (wantFull ? brew.image_url : brew.thumb_url) || '';
+  const key = wantFull ? brewFullKey(brew.id) : brewThumbKey(brew.id);
+
+  const cached = brewURLs.get(brew.id);
+  if (cached && cached.size === size && cached.src === src) return cached.url;
+
+  let blob = await getBlob(key);
+  if (blob && src && !brew._imgDirty) {
+    const from = await metaGet(`${brewSrcKey(brew.id)}:${size}`, null);
+    if (from !== src) blob = null;
+  }
+  if (!blob && src) {
+    try {
+      blob = await sb.downloadImage(src);
+      await putBlob(key, blob);
+      await metaSet(`${brewSrcKey(brew.id)}:${size}`, src);
+    } catch { return src; }
+  }
+  /* Falling back to the thumbnail beats an empty frame while the full photo
+     is still coming down — or when it never does. */
+  if (!blob && wantFull) return brewImageURL(brew, 'thumb');
+  if (!blob) return null;
+
+  releaseBrewURL(brew.id);
+  const url = URL.createObjectURL(blob);
+  brewURLs.set(brew.id, { url, src, size });
   return url;
 }
 
@@ -511,11 +632,34 @@ export async function sync() {
       await metaSet('sync:roster', roster);
     }
 
-    for (const table of ['beans', 'cafes']) {
+    for (const table of ['beans', 'cafes', 'brews']) {
       /* --- push --- */
       const local = await idb.all(table);
       // admins edit other members' entries, so those have to push too
       const dirty = local.filter(r => r._dirty && canEdit(r));
+
+      if (table === 'brews') {
+        /* Two sizes go up: the thumbnail every device pulls with its sync,
+           and the full photo only opened brews ever fetch. */
+        for (const b of dirty.filter(r => r._imgDirty)) {
+          const thumb = await getBlob(brewThumbKey(b.id));
+          if (!thumb) { delete b._imgDirty; continue; }
+          try {
+            const v = Date.now().toString(36);
+            const t = await sb.uploadImage(`${owner}/brew-${b.id}-t.jpg`, thumb);
+            b.thumb_url = `${t}?v=${v}`;
+            await metaSet(`brewsrc:${b.id}:thumb`, b.thumb_url);
+
+            const full = await getBlob(brewFullKey(b.id));
+            if (full) {
+              const f = await sb.uploadImage(`${owner}/brew-${b.id}.jpg`, full);
+              b.image_url = `${f}?v=${v}`;
+              await metaSet(`brewsrc:${b.id}:full`, b.image_url);
+            }
+            delete b._imgDirty;
+          } catch { /* retry next round */ }
+        }
+      }
 
       if (table === 'beans') {
         for (const b of dirty.filter(r => r._imgDirty)) {

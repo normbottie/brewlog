@@ -2,7 +2,7 @@
 
 import {
   listBeans, beanImageURL, syncState, membersById, sharingMembers, isForeign,
-  SCOPE_KEYS, scopeShared,
+  SCOPE_KEYS, scopeShared, brewCounts,
 } from '../store.js';
 import { h, esc, icon, stars, empty, ownerBadge, memberColor } from '../ui.js';
 import { radarMini } from '../radar.js';
@@ -15,6 +15,7 @@ export async function render(root) {
   if (!others.length) state.shared = false;
   const beans = await listBeans({ shared: state.shared });
   const members = membersById();
+  const brewsPerBag = await brewCounts();
 
   const roasters = [...new Set(beans.map(b => b.roaster).filter(Boolean))].sort();
   const brews = [...new Set(beans.map(b => b.brew_method).filter(Boolean))].sort();
@@ -122,6 +123,11 @@ export async function render(root) {
     return `<button class="glass bean-card ${foreign ? 'shared' : ''}"
         ${foreign ? `style="--owner:${memberColor(owner?._slot ?? -1)}"` : ''}
         data-go="#/bean/${esc(b.id)}">
+      ${brewsPerBag.get(b.id) ? `<span class="brew-count" aria-label="${brewsPerBag.get(b.id)} brews logged">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h12v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z"/>
+          <path d="M16 10h1.6a2.4 2.4 0 0 1 0 4.8H16"/></svg>${brewsPerBag.get(b.id)}</span>` : ''}
       <img class="shot" data-img="${esc(b.id)}" alt="${esc(b.name || 'Coffee bag')}"
            src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
       <div class="meta">

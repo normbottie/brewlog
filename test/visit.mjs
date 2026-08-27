@@ -19,10 +19,14 @@ const bean = (i, name) => ({
   created_at: `2026-0${i}-01T00:00:00.000Z`, updated_at: '2026-01-01T00:00:00.000Z',
 });
 
-// visited ones carry a date and a rating; the wishlist has neither
+/* Visited ones carry a date and a rating; the wishlist has neither.
+   Coordinates are fixed and well spread: random ones sometimes landed close
+   enough to merge into a cluster, which made the pin assertions flaky. */
+const SPOTS = { c1: [40.7128, -74.0060], c2: [40.7600, -73.9800], c3: [40.6800, -74.0400] };
 const cafe = (id, name, { rating = 4, visited_on = '2026-01-01' } = {}) => ({
-  id, user_id: ME, name, address: '1 Test St', lat: 40.7128 + Math.random() * 0.01,
-  lng: -74.006, rating, notes: '', visited_on, deleted: false,
+  id, user_id: ME, name, address: '1 Test St',
+  lat: SPOTS[id][0], lng: SPOTS[id][1],
+  rating, notes: '', visited_on, deleted: false,
   created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
 });
 
