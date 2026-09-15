@@ -54,14 +54,17 @@ export function render(root) {
 
       <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
 
-      <!-- Its own <form>. Safari anchors AutoFill to the form a field sits in,
-           and with the email input in the same (form-less) cluster it kept
-           offering an email address over the code box. Separating them is the
-           only lever the page actually has; the QuickType bar is iOS's and
-           cannot be suppressed outright. -->
+      <!-- Its own <form> (30f1c9d) wasn't enough on its own: Safari's contact
+           heuristic doesn't only look at form boundaries, it scans label/
+           aria-label TEXT for contact-ish words. The label and aria-label
+           here both said "...from the email", which is exactly the word
+           that made Safari reach for Contacts. Fixed by scrubbing "email"
+           out of this field's own text (see label + aria-label below); the
+           <form> split from 30f1c9d stays, since it's still the right
+           structural boundary. -->
       <form data-codeform autocomplete="off" novalidate>
       <div class="field">
-        <label for="l-code">Enter the code from the email</label>
+        <label for="l-code">Enter your sign-in code</label>
         <!-- One real input, six drawn boxes. Six separate inputs would look the
              same and break the thing that matters: iOS drops an autofilled code
              in as a single value, and a paste has to land whole. The input sits
@@ -73,7 +76,7 @@ export function render(root) {
                  autocomplete="one-time-code" name="one-time-code" maxlength="${CODE_MAX}"
                  autocapitalize="off" autocorrect="off" spellcheck="false"
                  data-1p-ignore data-lpignore="true"
-                 aria-label="Sign-in code from your email">
+                 aria-label="Sign-in code">
         </div>
       </div>
       <button class="btn-block" type="submit" data-verify>Verify code</button>
