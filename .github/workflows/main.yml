@@ -17,7 +17,7 @@ on:
     paths:
       - 'schema.sql'
       - 'supabase/functions/**'
-      - '.github/workflows/supabase.yml'
+      - '.github/workflows/main.yml'
   workflow_dispatch:
 
 concurrency:
