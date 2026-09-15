@@ -50,7 +50,8 @@ export async function render(root) {
     <div class="topbar"><div><h1>Settings</h1><div class="sub">Sync, rendering, backup</div></div></div>
     <div class="view">
 
-      <h2 class="section">Account</h2>
+      <details class="fold" open data-fold="account">
+      <summary><span>Account</span></summary>
       <div class="glass card-pad">
         ${isSignedIn() ? `
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
@@ -92,7 +93,7 @@ export async function render(root) {
 
           ${admin ? `
           <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
-          <div style="font-weight:600;font-size:15px">
+          <div style="font-weight:600;font-size:15px" data-memberscount>
             Members${pending.length ? ` · ${pending.length} waiting` : ''}
           </div>
           <div class="hint" style="margin:3px 0 12px">
@@ -122,6 +123,7 @@ export async function render(root) {
           <div class="hint" data-authstatus style="margin-top:10px"></div>
         `}
       </div>
+      </details>
 
       <details class="fold" data-fold="sync">
         <summary>
@@ -206,7 +208,8 @@ export async function render(root) {
       </div>
       </details>
 
-      <h2 class="section">Your data</h2>
+      <details class="fold" open data-fold="yourdata">
+      <summary><span>Your data</span></summary>
       <div class="glass card-pad">
         <div style="display:flex;gap:18px;margin-bottom:16px">
           <div><div class="k" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);font-weight:620">Beans</div>
@@ -228,14 +231,17 @@ export async function render(root) {
         </div>
         <input type="file" accept="application/json,.json" hidden data-importfile>
       </div>
+      </details>
 
-      <h2 class="section">Install</h2>
+      <details class="fold" open data-fold="install">
+      <summary><span>Install</span></summary>
       <div class="glass card-pad">
         <div class="hint">
           On iPhone: open this page in Safari, tap Share, then <strong>Add to Home Screen</strong>.
           It then runs full-screen with its own icon and works offline.
         </div>
       </div>
+      </details>
 
       <div style="height:12px"></div>
       <div class="hint" style="text-align:center">Brewlog · local-first · v1.0</div>
@@ -266,6 +272,25 @@ export async function render(root) {
   });
 
   /* --- members (admins only) --- */
+  /* The members list used to rely entirely on the app-wide 'brewlog:data'
+     listener to redraw after a change -- but that listener deliberately
+     skips #/settings (so an unrelated background sync can't stomp on a
+     display name you're mid-typing there), which left a clicked
+     Approve/Revoke/Remove button spinning forever: pullProfiles() had
+     already succeeded, nothing ever redrew it back. Repaint just this
+     block directly, in place, right after a change succeeds. */
+  function repaintMembers(message) {
+    const countEl = view.querySelector('[data-memberscount]');
+    const listEl = view.querySelector('[data-members]');
+    const statusEl = view.querySelector('[data-memberstatus]');
+    if (countEl) {
+      const p = pendingMembers();
+      countEl.textContent = `Members${p.length ? ` · ${p.length} waiting` : ''}`;
+    }
+    if (listEl) listEl.innerHTML = allMembers().map(m => memberRow(m, me)).join('');
+    if (statusEl && message !== undefined) statusEl.textContent = message;
+  }
+
   view.querySelector('[data-members]')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-approve], [data-revoke], [data-remove]');
     if (!btn) return;
@@ -288,7 +313,7 @@ export async function render(root) {
       btn.innerHTML = '<span class="spinner"></span>';
       try {
         await removeMember(id);
-        status.textContent = '✓ Removed.';
+        repaintMembers('✓ Removed.');
         document.dispatchEvent(new CustomEvent('brewlog:data'));
       } catch (err) {
         status.textContent = err.message || 'Could not remove that member';
@@ -312,8 +337,8 @@ export async function render(root) {
     btn.innerHTML = '<span class="spinner"></span>';
     try {
       await setMemberApproval(id, approving);
-      status.textContent = approving ? '✓ Approved.' : '✓ Access revoked.';
-      // the roster changed, so re-render from the fresh profiles
+      repaintMembers(approving ? '✓ Approved.' : '✓ Access revoked.');
+      // other open views (beans/cafes) may care that membership changed
       document.dispatchEvent(new CustomEvent('brewlog:data'));
     } catch (err) {
       status.textContent = err.message || 'Could not change that';
