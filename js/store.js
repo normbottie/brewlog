@@ -282,13 +282,18 @@ export async function beanImageURL(bean) {
   if (!blob && src) {
     try {
       blob = await sb.downloadImage(src);
-      await putBlob(imgKey(bean.id), blob);
-      await metaSet(imgSrcKey(bean.id), src);
     } catch {
       /* `src` is a storage path now, not a URL — handing it to an <img> would
          only paint a broken frame. An empty slot is the honest answer. */
       return null;
     }
+    /* Caching is an optimisation, not the point. A private window, a browser
+       that refuses Blobs in IndexedDB, or a full quota must not cost us a
+       photo we are already holding. */
+    try {
+      await putBlob(imgKey(bean.id), blob);
+      await metaSet(imgSrcKey(bean.id), src);
+    } catch {}
   }
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
@@ -400,13 +405,16 @@ export async function brewImageURL(brew, size = 'thumb') {
   if (!blob && src) {
     try {
       blob = await sb.downloadImage(src);
-      await putBlob(key, blob);
-      await metaSet(`${brewSrcKey(brew.id)}:${size}`, src);
     } catch {
       // a storage path is not something an <img> can load — see beanImageURL
       if (wantFull) return brewImageURL(brew, 'thumb');
       return null;
     }
+    // see beanImageURL: a failed cache write must not lose the photo
+    try {
+      await putBlob(key, blob);
+      await metaSet(`${brewSrcKey(brew.id)}:${size}`, src);
+    } catch {}
   }
   /* Falling back to the thumbnail beats an empty frame while the full photo
      is still coming down — or when it never does. */
