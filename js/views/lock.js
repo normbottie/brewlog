@@ -45,6 +45,12 @@ export function render(root) {
 
       <div style="border-top:1px solid var(--glass-brd);margin:18px 0 14px"></div>
 
+      <!-- Its own <form>. Safari anchors AutoFill to the form a field sits in,
+           and with the email input in the same (form-less) cluster it kept
+           offering an email address over the code box. Separating them is the
+           only lever the page actually has; the QuickType bar is iOS's and
+           cannot be suppressed outright. -->
+      <form data-codeform autocomplete="off" novalidate>
       <div class="field">
         <label for="l-code">Enter the code from the email</label>
         <!-- One real input, six drawn boxes. Six separate inputs would look the
@@ -61,7 +67,8 @@ export function render(root) {
                  aria-label="Sign-in code from your email">
         </div>
       </div>
-      <button class="btn-block" data-verify>Verify code</button>
+      <button class="btn-block" type="submit" data-verify>Verify code</button>
+      </form>
       <div class="hint" style="margin-top:10px">
         The email has a sign-in link too. Use the code if you added Brewlog to your
         Home Screen — iPhone opens that link in Safari, so it would sign you in
@@ -114,6 +121,11 @@ export function render(root) {
       box.classList.toggle('caret', focused && i === Math.min(digits.length, slots - 1));
     });
   }
+  view.querySelector('[data-codeform]')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    view.querySelector('[data-verify]').click();
+  });
+
   codeEl.addEventListener('input', paintCode);
   codeEl.addEventListener('focus', paintCode);
   codeEl.addEventListener('blur', paintCode);
