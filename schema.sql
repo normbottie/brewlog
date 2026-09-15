@@ -91,6 +91,44 @@ alter table public.cafes add column if not exists user_id uuid references auth.u
 create index if not exists beans_user_updated_idx on public.beans (user_id, updated_at);
 create index if not exists cafes_user_updated_idx on public.cafes (user_id, updated_at);
 create index if not exists brews_user_updated_idx on public.brews (user_id, updated_at);
+
+-- ---------------------------------------------------------------------------
+-- updated_at belongs to the server, not to whoever wrote the row.
+--
+-- Sync pulls incrementally with `updated_at >= <watermark>`, and the watermark
+-- is whatever timestamp the last pull saw. While each device stamped its own
+-- rows, a phone a minute behind the desktop wrote rows *underneath* the
+-- desktop's watermark, and the desktop never asked for them again — they were
+-- invisible for ever, with no error anywhere. One clock fixes it.
+--
+-- The client still sends updated_at (it is what last-write-wins compares on
+-- the way in); this simply overwrites it with server time on the way into the
+-- table, so every watermark and every comparison is in the same clock.
+-- ---------------------------------------------------------------------------
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists beans_touch_updated_at on public.beans;
+create trigger beans_touch_updated_at
+  before insert or update on public.beans
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists cafes_touch_updated_at on public.cafes;
+create trigger cafes_touch_updated_at
+  before insert or update on public.cafes
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists brews_touch_updated_at on public.brews;
+create trigger brews_touch_updated_at
+  before insert or update on public.brews
+  for each row execute function public.touch_updated_at();
 -- the strip on a bean screen reads by bean, newest first
 create index if not exists brews_bean_idx on public.brews (bean_id, brewed_on desc);
 

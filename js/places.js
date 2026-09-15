@@ -9,6 +9,30 @@ const ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
 ];
 
+/* Chains, excluded from the *sweep* of an area — "every café near me" is a
+   question about places worth going, and forty Starbucks drown the answer.
+   Matched on OSM's `brand` first (that is what the tag is for) and on the
+   name second, folded, so "Dunkin'" and "Dunkin Donuts" both land.
+
+   Deliberately NOT applied to searching by name: if you go looking for a
+   Starbucks you mean it, and one may well be on your want-to-visit list. */
+const CHAINS = [
+  'starbucks', 'dunkin', 'tim hortons', 'costa coffee', 'caribou coffee',
+  'peets coffee', 'peets coffee tea', 'the coffee bean tea leaf',
+  'coffee bean tea leaf', 'mcdonalds', 'mccafe', 'panera bread', 'panera',
+  'krispy kreme', 'dutch bros', 'dutch bros coffee', 'scooters coffee',
+  'biggby coffee', 'gloria jeans coffees', 'pret a manger', 'einstein bros bagels',
+  'brueggers bagels', 'au bon pain', 'cinnabon', 'seattles best coffee',
+  '7 eleven', 'wawa', 'sheetz', 'circle k', 'speedway', 'quiktrip', 'racetrac',
+  'cumberland farms', 'kwik trip', 'buc ees', 'subway', 'chick fil a',
+];
+
+function isChain(tags = {}) {
+  const brand = fold(tags.brand || tags.operator || '');
+  const name = fold(tags.name || '');
+  return CHAINS.some(c => brand === c || name === c || name.startsWith(c + ' '));
+}
+
 const R_EARTH = 6371000;
 
 export function distanceMeters(a, b) {
@@ -99,6 +123,7 @@ out center;`;
           const tags = el.tags || {};
           const name = (tags.name || '').trim();
           if (!name) return null;
+          if (isChain(tags)) return null;
           const key = name.toLowerCase() + Math.round(p.lat * 1e4) + Math.round(p.lon * 1e4);
           if (seen.has(key)) return null;
           seen.add(key);

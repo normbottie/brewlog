@@ -727,6 +727,23 @@ export async function sync() {
       await metaSet('sync:roster', roster);
     }
 
+    /* `updated_at` used to be stamped by whichever device wrote the row. A
+       phone running even slightly behind the desktop produced rows *below*
+       the desktop's pull watermark, and an incremental fetch never asked for
+       them again — cafés added on one device simply never arrived on the
+       other. The column is server-stamped now (see schema.sql); clear the
+       watermarks once so anything stranded under the old scheme comes down. */
+    if (!(await metaGet('sync:servertime', null))) {
+      await metaSet('sync:beans', null);
+      await metaSet('sync:cafes', null);
+      await metaSet('sync:brews', null);
+      await metaSet('sync:servertime', '1');
+    }
+
+    /* Only repaint if the sync actually brought news. Firing this every time
+       made returning to the window look like a page reload. */
+    let changed = false;
+
     for (const table of ['beans', 'cafes', 'brews']) {
       /* --- push --- */
       const local = await idb.all(table);
@@ -792,18 +809,18 @@ export async function sync() {
           if (mine?._dirty) continue;
           if (!mine || (r.updated_at || '') > (mine.updated_at || '')) merged.push(r);
         }
-        if (merged.length) await idb.putAll(table, merged);
+        if (merged.length) { await idb.putAll(table, merged); changed = true; }
         if (watermark) await metaSet(`sync:${table}`, watermark);
       }
 
       /* RLS simply stops returning the rows of a member who switched
          sharing off; the copies already on this device have to go too. */
-      if (rosterChanged) await purgeUnshared(table);
+      if (rosterChanged) { await purgeUnshared(table); changed = true; }
     }
     await syncSettings(owner);
     lastSyncAt = Date.now();
     setState('on', 'Synced');
-    document.dispatchEvent(new CustomEvent('brewlog:data'));
+    if (changed) document.dispatchEvent(new CustomEvent('brewlog:data'));
     return true;
   } catch (err) {
     setState('err', err.message || 'Sync failed');

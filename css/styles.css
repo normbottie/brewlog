@@ -364,7 +364,16 @@ select {
     radial-gradient(70% 55% at 50% 34%, rgba(201,168,124,.20), transparent 70%),
     linear-gradient(178deg, #241C17, #14100D);
 }
-.bean-card .meta { padding: 11px 13px 13px; }
+/* Grid stretches every card to the tallest in its row. Let .meta take up
+   that slack and push .row to the bottom, so the rating sits on the same
+   line across the row whether or not the bag carries an owner badge. */
+.bean-card .meta {
+  padding: 11px 13px 13px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .bean-card .name {
   font-weight: 620;
   font-size: 15px;
@@ -387,7 +396,8 @@ select {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-top: 9px;
+  margin-top: auto;
+  padding-top: 9px;
 }
 
 .chip {
