@@ -22,6 +22,7 @@
 <meta name="apple-mobile-web-app-title" content="Brewlog">
 
 <link rel="stylesheet" href="./vendor/leaflet.css">
+<link rel="stylesheet" href="./vendor/maplibre-gl.css">
 <link rel="stylesheet" href="./css/styles.css">
 </head>
 <body>
@@ -32,6 +33,13 @@
 <nav id="tabbar" aria-label="Primary"></nav>
 
 <script src="./vendor/leaflet.js" defer></script>
+<!-- MapLibre GL (vector renderer) + the Leaflet bridge that lets it act as
+     a normal Leaflet tile layer. Both are classic (non-module) scripts
+     loaded with defer, same as leaflet.js above, so script-order = execution
+     order and each one's global (L, then maplibregl, then L.maplibreGL) is
+     guaranteed to exist before the next one runs. -->
+<script src="./vendor/maplibre-gl.js" defer></script>
+<script src="./vendor/leaflet-maplibre-gl.js" defer></script>
 <script type="module" src="./js/app.js"></script>
 </body>
 </html>

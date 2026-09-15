@@ -5,6 +5,7 @@ import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, member
 import { nearbyCafes, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
 import { clusterLayer } from '../cluster.js';
 import { matches } from '../search.js';
+import { STADIA_API_KEY } from '../config.js';
 
 let mapRef = null;
 let clusters = null;
@@ -371,29 +372,20 @@ export async function render(root) {
      that checks the control more than the clustering. Reading only. */
   window.__brewlogMap = map;
 
-  /* Esri's Dark Gray Canvas, not CARTO: CARTO began requiring an API key for
-     their public basemaps and now stamps "API KEY REQUIRED" diagonally across
-     every unkeyed tile. Esri's equivalent needs no key and no account.
-
-     Two layers, because Esri splits the canvas from its labels the way CARTO's
-     dark_all did not — base first, place names on top.
-
-     Note the {z}/{y}/{x} order: Esri puts row before column, and getting it the
-     usual way round yields tiles from the wrong hemisphere rather than an error.
-     maxNativeZoom caps the fetch at 16, which is as deep as this service is
-     drawn; Leaflet upscales past that so pin-dropping still zooms in. */
-  const esri = (service) =>
-    `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${service}/MapServer/tile/{z}/{y}/{x}`;
-
-  L.tileLayer(esri('World_Dark_Gray_Base'), {
-    maxZoom: 20,
-    maxNativeZoom: 16,
-    attribution: '&copy; OpenStreetMap | Tiles &copy; Esri',
+  /* Stadia's "Alidade Smooth Dark" vector style, not Esri's Dark Gray Canvas:
+     Esri's free tiles are a fixed 256px/96dpi raster with no @2x variant, so
+     they looked soft on any retina screen — a limit of that source, not a
+     bug. MapLibre GL renders the vectors itself, so it's sharp at any zoom
+     and any device pixel ratio. Needs a free Stadia key (STADIA_API_KEY in
+     config.js); attributionControl:false because Leaflet already draws one
+     (added below) — two attribution controls would stack. */
+  L.maplibreGL({
+    style: `https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json?api_key=${STADIA_API_KEY}`,
+    attributionControl: false,
   }).addTo(map);
-  L.tileLayer(esri('World_Dark_Gray_Reference'), {
-    maxZoom: 20,
-    maxNativeZoom: 16,
-  }).addTo(map);
+  map.attributionControl.addAttribution(
+    '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; OpenStreetMap contributors'
+  );
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 28] });
   /* A hollow pin reads as "not been there yet" without needing a legend. */

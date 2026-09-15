@@ -5,6 +5,7 @@ import {
   beansForCafe, beanImageURL,
 } from '../store.js';
 import { h, esc, icon, stars, bindStars, toast, confirmSheet, fmtDate, ownerBadge, goReplace } from '../ui.js';
+import { STADIA_API_KEY } from '../config.js';
 
 export async function render(root, id) {
   const cafe = await getCafe(id);
@@ -137,9 +138,16 @@ export async function render(root, id) {
   let map = null;
   if (hasPin && window.L) {
     map = L.map('map', { zoomControl: false, attributionControl: true }).setView([cafe.lat, cafe.lng], 16);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20, subdomains: 'abcd', attribution: '&copy; OpenStreetMap &copy; CARTO',
+    // Same Stadia vector basemap as the cafes list map (see cafes.js) — CARTO's
+    // dark_all now needs its own key and was never updated here when the list
+    // map moved off it.
+    L.maplibreGL({
+      style: `https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json?api_key=${STADIA_API_KEY}`,
+      attributionControl: false,
     }).addTo(map);
+    map.attributionControl.addAttribution(
+      '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; OpenStreetMap contributors'
+    );
     L.marker([cafe.lat, cafe.lng], {
       icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 28] }),
     }).addTo(map);

@@ -19,3 +19,14 @@ export const DEFAULT_SUPABASE = {
   url: 'https://uszcbsovcdzzfxqtzazb.supabase.co',
   key: 'sb_publishable_JHn6cJ4kGirP2eTWKaQRXg_Ft2FJpH4',
 };
+
+/* Stadia Maps' "Alidade Smooth Dark" vector style, used for both the cafes
+ * map and a single cafe's mini-map. Genuinely sharp at any zoom and any
+ * device pixel ratio, unlike a plain raster tile source (Esri's free Dark
+ * Gray Canvas has no @2x tiles, which is why it looked soft on a retina
+ * screen). Get a free key at https://client.stadiamaps.com — the
+ * non-commercial tier costs nothing, it just needs the key's "Allowed
+ * domains" set to normbottie.github.io (add localhost too for testing
+ * locally). A blank/grey map where the pins still work means this key is
+ * missing, wrong, or the domain restriction doesn't match. */
+export const STADIA_API_KEY = '09890d52-b5b0-44d5-8d09-9f43ce2d8321';

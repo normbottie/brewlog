@@ -1,6 +1,6 @@
 /* Brewlog service worker — app shell cached, map tiles cached opportunistically. */
 
-const VERSION = 'brewlog-v11';
+const VERSION = 'brewlog-v12';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 
@@ -11,6 +11,9 @@ const SHELL_FILES = [
   './css/styles.css',
   './vendor/leaflet.css',
   './vendor/leaflet.js',
+  './vendor/maplibre-gl.css',
+  './vendor/maplibre-gl.js',
+  './vendor/leaflet-maplibre-gl.js',
   './vendor/images/marker-icon.png',
   './vendor/images/marker-shadow.png',
   './js/app.js',
@@ -72,8 +75,8 @@ self.addEventListener('fetch', (e) => {
   // never cache API traffic
   if (/supabase\.co|googleapis\.com|api\.openai\.com|nominatim|overpass/.test(url.hostname)) return;
 
-  // map tiles: cache-first, capped
-  if (/tile\.openstreetmap\.org$|server\.arcgisonline\.com$/.test(url.hostname)) {
+  // map tiles/styles/sprites/fonts: cache-first, capped
+  if (/tile\.openstreetmap\.org$|tiles\.stadiamaps\.com$/.test(url.hostname)) {
     e.respondWith(
       caches.open(TILES).then(async (cache) => {
         const hit = await cache.match(request);
