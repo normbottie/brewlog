@@ -13,6 +13,15 @@ const LS_EMAIL = 'brewlog.auth.email';
 /* How many boxes to draw before any code is typed. Supabase's email OTP
    length is configurable per project (6-10); this project's is 8. CODE_MAX is
    the ceiling the input will accept, so a longer code is never silently cut. */
+/* The emailed link opens in the default browser. That only strands you when
+   the app is running standalone from the Home Screen — in a browser tab the
+   link comes back to the same place, and the warning is noise. */
+const LINK_OPENS_ELSEWHERE =
+  (window.navigator.standalone === true
+    || window.matchMedia?.('(display-mode: standalone)')?.matches === true)
+  && (/iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
 const CODE_LEN = 8;
 const CODE_MAX = 10;
 
@@ -69,10 +78,13 @@ export function render(root) {
       </div>
       <button class="btn-block" type="submit" data-verify>Verify code</button>
       </form>
-      <div class="hint" style="margin-top:10px">
-        The email has a sign-in link too. Use the code if you added Brewlog to your
-        Home Screen — iPhone opens that link in Safari, so it would sign you in
-        there rather than here.
+      <!-- Only shown once a code has actually been sent, and only to someone it
+           is true for: the link-opens-Safari problem exists in the installed
+           app on iOS and nowhere else. Everyone else was reading a warning
+           about a situation they were not in. -->
+      <div class="hint" data-safari-note style="margin-top:10px" hidden>
+        You're in the installed app, so the link in that email would open Safari
+        and sign you in <em>there</em> instead of here. Use the code.
       </div>
     </div>
 
@@ -156,6 +168,8 @@ export function render(root) {
       const sent = await signIn(emailEl.value);
       try { localStorage.setItem(LS_EMAIL, sent); } catch {}
       status.textContent = `Sent to ${sent}. Type the code below, or tap the link if the email opens here.`;
+      const note = view.querySelector('[data-safari-note]');
+      if (note && LINK_OPENS_ELSEWHERE) note.hidden = false;
       codeEl.focus();
     } catch (err) {
       status.textContent = /sign.?ups?.*(disabled|not allowed)/i.test(err.message || '')

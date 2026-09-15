@@ -1337,3 +1337,26 @@ a.cafe-row:active { transform: scale(.988); }
   /* 16px or iOS zooms the page in when it takes focus */
   font-size: 16px;
 }
+
+
+/* --- draggable search area ------------------------------------------- */
+.area-bar { display: flex; gap: 9px; margin-top: 9px; }
+.area-bar[hidden] { display: none; }
+.area-dot {
+  width: 15px; height: 15px; margin: 5px;
+  border-radius: 50%;
+  background: var(--tan-bright);
+  border: 2px solid rgba(0, 0, 0, .5);
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .55);
+  cursor: move;
+}
+/* Bigger than it looks: the grip is the one thing on the map you have to hit
+   with a thumb, so the hit area is the whole 26px icon. */
+.area-grip {
+  width: 19px; height: 19px; margin: 3px;
+  border-radius: 50%;
+  background: var(--espresso);
+  border: 2.5px solid var(--tan-bright);
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .55);
+  cursor: ew-resize;
+}

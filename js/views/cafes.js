@@ -2,7 +2,7 @@
 
 import { listCafes, saveCafe, blankCafe, membersById, sharingMembers, isForeign, isWishlist } from '../store.js';
 import { h, esc, icon, stars, empty, sheet, toast, bindStars, ownerBadge, memberColor } from '../ui.js';
-import { findCafesAround, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
+import { nearbyCafes, searchPlacesByName, locate, formatDistance, distanceMeters } from '../places.js';
 import { clusterLayer } from '../cluster.js';
 import { matches } from '../search.js';
 
@@ -40,9 +40,13 @@ export async function render(root) {
       <div id="map"></div>
       <div style="display:flex;gap:9px;margin-top:12px">
         <button class="btn-primary" style="flex:1;white-space:nowrap" data-near>
-          ${icon('locate')} Near me
+          ${icon('locate')} Walking distance
         </button>
         <button data-here style="flex:1;white-space:nowrap">This map area</button>
+      </div>
+      <div class="area-bar" data-areabar hidden>
+        <button class="btn-primary" style="flex:1" data-runsearch>Search this area</button>
+        <button style="flex:0 0 auto" data-cancelarea>Cancel</button>
       </div>
       <div class="hint" data-nearstatus style="margin-top:8px">Or tap anywhere on the map to drop a pin — you can drag it to fine-tune, and close the sheet to cancel.</div>
       <div class="search-bar" style="margin-top:16px">
@@ -173,48 +177,107 @@ export async function render(root) {
 
   const nearStatus = view.querySelector('[data-nearstatus]');
 
-  /* Show the area that was actually searched. Without this the map kept its
-     own zoom, so results outside the visible box looked like a bug. */
-  let searchRing = null;
-  function showSearchArea(point, radius) {
-    if (!mapRef) return;
-    if (searchRing) mapRef.removeLayer(searchRing);
-    searchRing = L.circle([point.lat, point.lng], {
-      radius,
-      color: '#E4C79A', weight: 1, opacity: 0.55,
-      fillColor: '#E4C79A', fillOpacity: 0.07,
-      interactive: false,
-    }).addTo(mapRef);
-    mapRef.fitBounds(searchRing.getBounds(), { padding: [22, 22] });
+  /* ---- the search area -------------------------------------------------
+     The circle used to appear *after* a search, to explain where the results
+     had come from — and the radius was chosen for you, escalating from 2.4km
+     to 8km until something turned up. So "Near me" could quietly search five
+     miles. Now the circle comes first and is yours: drag the middle to move
+     it, drag the grip on its edge to resize, and nothing is queried until you
+     say so. What you see is exactly what gets searched. */
+  const areaBar = view.querySelector('[data-areabar]');
+  const MIN_R = 150, MAX_R = 10000;
+  const WALKING = 800;                       // ~half a mile
+  let area = null;                           // { center: L.LatLng, radius: m }
+  let areaCircle = null, centerGrip = null, edgeGrip = null;
+
+  const clampR = (r) => Math.min(MAX_R, Math.max(MIN_R, r));
+  const gripIcon = (cls) => L.divIcon({
+    className: '', html: `<div class="${cls}"></div>`, iconSize: [26, 26], iconAnchor: [13, 13],
+  });
+
+  /* A point `meters` due east of centre — where the resize grip parks. */
+  function eastOf(center, meters) {
+    const perDeg = 111320 * Math.cos(center.lat * Math.PI / 180);
+    return L.latLng(center.lat, center.lng + meters / (perDeg || 1));
   }
 
-  async function runSearch(btn, getPoint, label) {
-    const original = btn.innerHTML;
+  function areaLabel() {
+    const btn = view.querySelector('[data-runsearch]');
+    if (btn && area && !btn.disabled) {
+      btn.textContent = `Search this area · ${formatDistance(area.radius)}`;
+    }
+  }
+
+  function clearArea() {
+    [areaCircle, centerGrip, edgeGrip].forEach(l => { if (l && mapRef) mapRef.removeLayer(l); });
+    areaCircle = centerGrip = edgeGrip = null;
+    area = null;
+    areaBar.hidden = true;
+  }
+
+  function setArea(center, radius) {
+    if (!mapRef) return;
+    clearArea();
+    area = { center: L.latLng(center.lat, center.lng), radius: clampR(radius) };
+
+    areaCircle = L.circle(area.center, {
+      radius: area.radius,
+      color: '#E4C79A', weight: 1.5, opacity: .8,
+      fillColor: '#E4C79A', fillOpacity: .09,
+      interactive: false,
+    }).addTo(mapRef);
+
+    centerGrip = L.marker(area.center, {
+      icon: gripIcon('area-dot'), draggable: true, zIndexOffset: 900,
+    }).addTo(mapRef);
+    edgeGrip = L.marker(eastOf(area.center, area.radius), {
+      icon: gripIcon('area-grip'), draggable: true, zIndexOffset: 900,
+    }).addTo(mapRef);
+
+    centerGrip.on('drag', () => {
+      area.center = centerGrip.getLatLng();
+      areaCircle.setLatLng(area.center);
+      edgeGrip.setLatLng(eastOf(area.center, area.radius));
+    });
+    edgeGrip.on('drag', () => {
+      area.radius = clampR(mapRef.distance(area.center, edgeGrip.getLatLng()));
+      areaCircle.setRadius(area.radius);
+      areaLabel();
+    });
+    /* Snap the grip back to due east on release, so it doesn't drift round
+       the circle and become hard to find next time. */
+    edgeGrip.on('dragend', () => edgeGrip.setLatLng(eastOf(area.center, area.radius)));
+
+    areaBar.hidden = false;
+    areaLabel();
+    nearStatus.textContent =
+      'Drag the middle to move the circle, or the grip on its edge to resize. Nothing is searched until you tap Search.';
+    mapRef.fitBounds(areaCircle.getBounds(), { padding: [30, 30] });
+  }
+
+  async function runSearch(btn) {
+    if (!area) return;
+    const point = { lat: area.center.lat, lng: area.center.lng };
+    const radius = area.radius;
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> ${label}`;
+    btn.innerHTML = `<span class="spinner"></span> Searching…`;
     nearStatus.innerHTML = `<span class="busy"><span class="spinner"></span>Searching OpenStreetMap…</span>`;
     try {
-      const point = await getPoint();
-      // pan, but keep the zoom the user chose — the fit comes after,
-      // once we know how far the search actually reached
-      if (mapRef) mapRef.setView([point.lat, point.lng], mapRef.getZoom());
-      const { results, radius } = await findCafesAround(point);
-      showSearchArea(point, radius);
-      const where = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
+      const results = await nearbyCafes(point, radius);
       if (!results.length) {
         nearStatus.innerHTML =
-          `No cafés are mapped within ${esc(formatDistance(radius))} of ${esc(where)}. That is ` +
-          `OpenStreetMap's coverage, not an error — tap the map to add one yourself.`;
+          `No cafés are mapped inside that circle. That is OpenStreetMap's coverage, not ` +
+          `an error — widen the circle and search again, or tap the map to add one yourself.`;
         return;
       }
       nearStatus.textContent =
-        `${results.length} found within ${formatDistance(radius)} of ${where} — the circled area.`;
+        `${results.length} found within ${formatDistance(radius)} of the circle's centre.`;
       showNearbySheet(results, cafes, paint);
     } catch (err) {
       nearStatus.textContent = err.message || 'Could not search for cafés';
     } finally {
       btn.disabled = false;
-      btn.innerHTML = original;
+      areaLabel();
     }
   }
 
@@ -254,15 +317,40 @@ export async function render(root) {
     }
   });
 
-  view.querySelector('[data-near]').onclick = (e) =>
-    runSearch(e.currentTarget, () => locate(), 'Finding you…');
+  /* Both buttons only *place* a circle. Neither searches. */
+  view.querySelector('[data-near]').onclick = async (e) => {
+    const btn = e.currentTarget;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Finding you…`;
+    try {
+      setArea(await locate(), WALKING);
+    } catch (err) {
+      nearStatus.textContent = err.message || 'Could not find you';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  };
 
-  view.querySelector('[data-here]').onclick = (e) =>
-    runSearch(e.currentTarget, async () => {
-      if (!mapRef) throw new Error('Map is still loading');
-      const c = mapRef.getCenter();
-      return { lat: c.lat, lng: c.lng };
-    }, 'Searching…');
+  view.querySelector('[data-here]').onclick = () => {
+    if (!mapRef) { nearStatus.textContent = 'Map is still loading'; return; }
+    const c = mapRef.getCenter();
+    const b = mapRef.getBounds();
+    /* the largest circle that still fits on screen */
+    const r = Math.min(
+      mapRef.distance(c, L.latLng(b.getNorth(), c.lng)),
+      mapRef.distance(c, L.latLng(c.lat, b.getEast())),
+    );
+    setArea({ lat: c.lat, lng: c.lng }, r);
+  };
+
+  view.querySelector('[data-cancelarea]').onclick = () => {
+    clearArea();
+    nearStatus.textContent = '';
+  };
+
+  view.querySelector('[data-runsearch]').onclick = (e) => runSearch(e.currentTarget);
 
   root.appendChild(view);
   paint();
