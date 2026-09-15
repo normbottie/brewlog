@@ -699,6 +699,33 @@ export function queueSync(delay = 1500) {
   syncTimer = setTimeout(() => { sync().catch(() => {}); }, delay);
 }
 
+/* A batch upsert is all-or-nothing, so a single row the database refuses used
+   to abort the whole sync — including the *pull*, which is how one un-pushable
+   row left a device silently stale for three weeks. On a refusal, split the
+   batch and keep everything that is actually fine; only genuinely rejected
+   rows stay dirty.
+
+   Splitting only makes sense for a refusal (4xx). A dropped connection has no
+   status, and halving the batch would just make the same failure N times, so
+   that one is rethrown for the caller's normal error handling. */
+async function pushBatch(table, rows, owner) {
+  try {
+    await sb.upsert(table, rows.map(r => toRemote(r, owner)));
+    return { pushed: rows, rejected: [] };
+  } catch (err) {
+    const refused = err.status >= 400 && err.status < 500;
+    if (!refused) throw err;
+    if (rows.length === 1) return { pushed: [], rejected: [{ row: rows[0], err }] };
+    const mid = Math.ceil(rows.length / 2);
+    const a = await pushBatch(table, rows.slice(0, mid), owner);
+    const b = await pushBatch(table, rows.slice(mid), owner);
+    return {
+      pushed: [...a.pushed, ...b.pushed],
+      rejected: [...a.rejected, ...b.rejected],
+    };
+  }
+}
+
 export async function sync() {
   if (!sb.isConfigured()) { setState('off', 'Local only'); return false; }
   if (!isSignedIn()) { setState('off', 'Sign in to sync'); return false; }
@@ -743,6 +770,9 @@ export async function sync() {
     /* Only repaint if the sync actually brought news. Firing this every time
        made returning to the window look like a page reload. */
     let changed = false;
+    /* Rows the server would not take. Collected rather than thrown, so the
+       rest of the sync still runs and the message can name them. */
+    const refused = [];
 
     for (const table of ['beans', 'cafes', 'brews']) {
       /* --- push --- */
@@ -791,8 +821,11 @@ export async function sync() {
       }
 
       if (dirty.length) {
-        await sb.upsert(table, dirty.map(r => toRemote(r, owner)));
-        for (const r of dirty) { delete r._dirty; await idb.put(table, r); }
+        const { pushed, rejected } = await pushBatch(table, dirty, owner);
+        for (const r of pushed) { delete r._dirty; await idb.put(table, r); }
+        for (const { row, err } of rejected) {
+          refused.push(`${table}/${row.id}: ${err.message}`);
+        }
       }
 
       /* --- pull --- */
@@ -819,7 +852,13 @@ export async function sync() {
     }
     await syncSettings(owner);
     lastSyncAt = Date.now();
-    setState('on', 'Synced');
+    if (refused.length) {
+      console.warn('[brewlog] the server refused these rows:', refused);
+      const n = refused.length;
+      setState('err', `Synced, but the server refused ${n} ${n === 1 ? 'entry' : 'entries'}`);
+    } else {
+      setState('on', 'Synced');
+    }
     if (changed) document.dispatchEvent(new CustomEvent('brewlog:data'));
     return true;
   } catch (err) {

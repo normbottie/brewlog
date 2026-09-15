@@ -248,8 +248,16 @@ create policy "beans readable" on public.beans
   );
 drop policy if exists "beans insert own" on public.beans;
 create policy "beans insert own" on public.beans
+  -- The admin escape mirrors "beans update own". Without it an admin editing
+  -- another member's row could never sync: the client pushes with upsert,
+  -- PostgREST implements that as INSERT ... ON CONFLICT, and Postgres checks
+  -- the INSERT policy's WITH CHECK even when the conflict resolves to an
+  -- UPDATE. The row was therefore rejected 42501 for ever.
   for insert to authenticated
-  with check (auth.uid() = user_id and public.is_approved());
+  with check (
+    (auth.uid() = user_id and public.is_approved())
+    or public.is_admin()
+  );
 drop policy if exists "beans update own" on public.beans;
 create policy "beans update own" on public.beans
   for update to authenticated
@@ -273,8 +281,16 @@ create policy "cafes readable" on public.cafes
   );
 drop policy if exists "cafes insert own" on public.cafes;
 create policy "cafes insert own" on public.cafes
+  -- The admin escape mirrors "cafes update own". Without it an admin editing
+  -- another member's row could never sync: the client pushes with upsert,
+  -- PostgREST implements that as INSERT ... ON CONFLICT, and Postgres checks
+  -- the INSERT policy's WITH CHECK even when the conflict resolves to an
+  -- UPDATE. The row was therefore rejected 42501 for ever.
   for insert to authenticated
-  with check (auth.uid() = user_id and public.is_approved());
+  with check (
+    (auth.uid() = user_id and public.is_approved())
+    or public.is_admin()
+  );
 drop policy if exists "cafes update own" on public.cafes;
 create policy "cafes update own" on public.cafes
   for update to authenticated
@@ -301,8 +317,16 @@ create policy "brews readable" on public.brews
   );
 drop policy if exists "brews insert own" on public.brews;
 create policy "brews insert own" on public.brews
+  -- The admin escape mirrors "brews update own". Without it an admin editing
+  -- another member's row could never sync: the client pushes with upsert,
+  -- PostgREST implements that as INSERT ... ON CONFLICT, and Postgres checks
+  -- the INSERT policy's WITH CHECK even when the conflict resolves to an
+  -- UPDATE. The row was therefore rejected 42501 for ever.
   for insert to authenticated
-  with check (auth.uid() = user_id and public.is_approved());
+  with check (
+    (auth.uid() = user_id and public.is_approved())
+    or public.is_admin()
+  );
 drop policy if exists "brews update own" on public.brews;
 create policy "brews update own" on public.brews
   for update to authenticated

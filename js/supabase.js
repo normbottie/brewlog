@@ -62,6 +62,16 @@ async function headers(cfg, extra = {}) {
   };
 }
 
+/* Errors thrown from here carry `.status`, so a caller can tell "the server
+   refused this row" (4xx, retrying won't help) from "the connection died"
+   (no status, retrying will). */
+function httpError(message, status, code) {
+  const err = new Error(message);
+  err.status = status;
+  if (code) err.code = code;
+  return err;
+}
+
 async function jsonOrThrow(res) {
   if (!res.ok) {
     let body = null;
@@ -73,16 +83,30 @@ async function jsonOrThrow(res) {
     const missing = /Could not find the table '([^']+)'/.exec(detail);
     if (body?.code === 'PGRST205' || missing) {
       const table = (missing?.[1] || '').replace(/^public\./, '') || 'a table';
-      throw new Error(
+      throw httpError(
         `Your database is missing the \`${table}\` table — run the latest schema.sql ` +
         `in the Supabase SQL editor (Settings → SQL Editor → New query). ` +
-        `If you just ran it, wait ~30 seconds and try again.`
+        `If you just ran it, wait ~30 seconds and try again.`,
+        res.status, body?.code
       );
     }
-    if (res.status === 401 || res.status === 403) {
-      throw new Error('Supabase rejected the request — check you are signed in.');
+    if (res.status === 401) {
+      throw httpError('Supabase rejected your sign-in — sign out and back in.', 401, body?.code);
     }
-    throw new Error(detail || `Supabase error ${res.status}`);
+    if (res.status === 403) {
+      /* Authenticated fine; the database refused. 42501 is row-level security,
+         which is a permissions problem and has nothing to do with sign-in —
+         saying "check you are signed in" here sends you hunting in the wrong
+         place, which cost three weeks once. */
+      const code = body?.code ? ` (${body.code})` : '';
+      throw httpError(
+        body?.message
+          ? `The database refused that${code}: ${body.message}`
+          : 'The database refused that request — you may not have permission.',
+        403, body?.code
+      );
+    }
+    throw httpError(detail || `Supabase error ${res.status}`, res.status, body?.code);
   }
   if (res.status === 204) return null;
   const text = await res.text();
