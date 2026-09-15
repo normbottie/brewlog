@@ -1283,3 +1283,55 @@ a.cafe-row:active { transform: scale(.988); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+
+/* --- one-time code -------------------------------------------------- */
+/* Six boxes, one input. The input is transparent and stretched over the
+   boxes: it keeps focus, autofill and paste (all of which arrive as one
+   value), while the boxes draw the digits and the caret position. */
+.otp { position: relative; }
+.otp-boxes { display: flex; gap: 8px; }
+.otp-boxes span {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 54px;
+  border: 1px solid var(--glass-brd);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  transition: border-color .15s, background .15s;
+}
+.otp-boxes span.filled {
+  border-color: rgba(201, 168, 124, .5);
+  background: rgba(201, 168, 124, .07);
+}
+.otp-boxes span.caret::after {
+  content: '';
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--tan);
+  animation: otp-caret 1.1s steps(1) infinite;
+}
+@keyframes otp-caret { 50% { opacity: 0; } }
+.otp input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  /* invisible, but still a real focusable input — not display:none, which
+     would take autofill with it */
+  opacity: 0;
+  /* 16px or iOS zooms the page in when it takes focus */
+  font-size: 16px;
+}

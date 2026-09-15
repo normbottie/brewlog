@@ -37,9 +37,21 @@ export function render(root) {
 
       <div class="field">
         <label for="l-code">Enter the code from the email</label>
-        <input id="l-code" data-code inputmode="numeric" autocomplete="one-time-code"
-               maxlength="10" placeholder="••••••••"
-               style="letter-spacing:.4em;text-align:center;font-size:20px;font-variant-numeric:tabular-nums">
+        <!-- One real input, six drawn boxes. Six separate inputs would look the
+             same and break the thing that matters: iOS drops an autofilled code
+             in as a single value, and a paste has to land whole. The input sits
+             transparent on top so it keeps focus, autofill and paste, while the
+             boxes below just mirror what it holds. -->
+        <div class="otp" data-otp>
+          <div class="otp-boxes" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <input id="l-code" data-code type="text" inputmode="numeric" pattern="[0-9]*"
+                 autocomplete="one-time-code" name="one-time-code" maxlength="6"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 data-1p-ignore data-lpignore="true"
+                 aria-label="Six-digit sign-in code">
+        </div>
       </div>
       <button class="btn-block" data-verify>Verify code</button>
       <div class="hint" style="margin-top:10px">
@@ -70,6 +82,30 @@ export function render(root) {
       setTimeout(() => emailEl.focus(), 0);
     }
   });
+
+  /* Mirror the value into the boxes. The input itself is invisible, so this
+     is the only thing that draws the code — including which box the caret is
+     sitting in front of. */
+  const otpBoxes = [...view.querySelectorAll('.otp-boxes span')];
+  function paintCode() {
+    const digits = codeEl.value.replace(/\D/g, '').slice(0, 6);
+    if (codeEl.value !== digits) codeEl.value = digits;   // strip anything pasted in
+    const focused = document.activeElement === codeEl;
+    otpBoxes.forEach((box, i) => {
+      box.textContent = digits[i] || '';
+      box.classList.toggle('filled', Boolean(digits[i]));
+      box.classList.toggle('caret', focused && i === Math.min(digits.length, 5));
+    });
+  }
+  codeEl.addEventListener('input', paintCode);
+  codeEl.addEventListener('focus', paintCode);
+  codeEl.addEventListener('blur', paintCode);
+  /* The caret is always at the end — clicking into the middle of a code you
+     are part-way through typing would otherwise strand it. */
+  codeEl.addEventListener('click', () => {
+    codeEl.setSelectionRange(codeEl.value.length, codeEl.value.length);
+  });
+  paintCode();
 
   /* iOS autofill or a paste drops the whole code in at once — verify it
      without a second tap. Typing digit by digit still uses the button. */
