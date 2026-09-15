@@ -223,6 +223,23 @@ create policy "own profile update" on public.profiles
   using (auth.uid() = user_id or public.is_admin())
   with check (auth.uid() = user_id or public.is_admin());
 
+-- An admin drops a pending request outright, or drops an approved member
+-- from the roster. This only removes their *profile* row (membership,
+-- approval state, display name) -- their auth.users row is untouched (an
+-- admin can't delete that from the client, by design: it needs the
+-- service_role key, which never ships to the browser), and so are any
+-- beans/cafes/brews they already synced, which reference auth.users
+-- directly, not profiles. So this is "kick them out, they can ask again",
+-- not "erase them" -- if someone must never sign back in at all, that's a
+-- manual Supabase dashboard action (Authentication -> Users -> delete),
+-- not something this app can safely do with a publishable key.
+-- `user_id <> auth.uid()` blocks an admin from removing their own row this
+-- way, mirroring the same guard store.js enforces client-side.
+drop policy if exists "admin remove profile" on public.profiles;
+create policy "admin remove profile" on public.profiles
+  for delete to authenticated
+  using (public.is_admin() and user_id <> auth.uid());
+
 -- ------------------------------------------------------------- policies --
 
 alter table public.beans enable row level security;

@@ -153,6 +153,17 @@ export async function patch(table, query, body) {
   return jsonOrThrow(res);
 }
 
+/** DELETE rows matching a PostgREST filter, e.g. `user_id=eq.<uuid>`. */
+export async function del(table, query) {
+  const cfg = getConfig();
+  if (!cfg) return null;
+  const res = await fetch(`${cfg.url}/rest/v1/${table}?${query}`, {
+    method: 'DELETE',
+    headers: await headers(cfg, { Prefer: 'return=minimal' }),
+  });
+  return jsonOrThrow(res);
+}
+
 /** Upload a blob to storage; returns the bucket-relative path it landed on.
  *
  * A path, not a URL, on purpose: the bucket is private, so a stored link

@@ -3,7 +3,7 @@
 import * as sb from '../supabase.js';
 import { exportBackup, importBackup, sync, syncState, listBeans, listCafes, markSettingsDirty,
          myProfile, saveMyProfile, sharingMembers,
-         isAdmin, allMembers, pendingMembers, setMemberApproval } from '../store.js';
+         isAdmin, allMembers, pendingMembers, setMemberApproval, removeMember } from '../store.js';
 import {
   PROVIDERS, getImageAPIConfig, setImageAPIConfig, clearImageAPIConfig,
 } from '../imaging.js';
@@ -24,9 +24,12 @@ function memberRow(m, me) {
         m.is_admin ? 'Admin' : m.approved ? 'Approved' : 'Waiting for approval'
       }${m.share_log ? ' · sharing' : ''}</div>
     </div>
-    ${you || m.is_admin ? '' : m.approved
-      ? `<button class="btn-sm" data-revoke="${esc(m.user_id)}">Revoke</button>`
-      : `<button class="btn-sm btn-primary" data-approve="${esc(m.user_id)}">Approve</button>`}
+    ${you || m.is_admin ? '' : `
+      ${m.approved
+        ? `<button class="btn-sm" data-revoke="${esc(m.user_id)}">Revoke</button>`
+        : `<button class="btn-sm btn-primary" data-approve="${esc(m.user_id)}">Approve</button>`}
+      <button class="btn-sm" data-remove="${esc(m.user_id)}">Remove</button>
+    `}
   </div>`;
 }
 
@@ -264,11 +267,39 @@ export async function render(root) {
 
   /* --- members (admins only) --- */
   view.querySelector('[data-members]')?.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-approve], [data-revoke]');
+    const btn = e.target.closest('[data-approve], [data-revoke], [data-remove]');
     if (!btn) return;
+    const status = view.querySelector('[data-memberstatus]');
+
+    if (btn.hasAttribute('data-remove')) {
+      const id = btn.getAttribute('data-remove');
+      const row = btn.closest('.member-row');
+      const name = row?.querySelector('.nm')?.textContent || 'this member';
+      const pending = row?.classList.contains('pending');
+      const ok = await confirmSheet('Remove from the roster?',
+        pending
+          ? `${name} will need to sign in and ask again — this only rejects the current request.`
+          : `${name} drops off the members list and can no longer sync or see anyone else's log. ` +
+            'Anything they already shared stays put; they\'d start over as a new pending request ' +
+            'if they signed back in.',
+        'Remove');
+      if (!ok) return;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+      try {
+        await removeMember(id);
+        status.textContent = '✓ Removed.';
+        document.dispatchEvent(new CustomEvent('brewlog:data'));
+      } catch (err) {
+        status.textContent = err.message || 'Could not remove that member';
+        btn.disabled = false;
+        btn.textContent = 'Remove';
+      }
+      return;
+    }
+
     const approving = btn.hasAttribute('data-approve');
     const id = btn.getAttribute(approving ? 'data-approve' : 'data-revoke');
-    const status = view.querySelector('[data-memberstatus]');
 
     if (!approving) {
       const ok = await confirmSheet('Revoke access?',

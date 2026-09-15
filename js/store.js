@@ -534,6 +534,20 @@ export async function setMemberApproval(memberId, approved) {
   document.dispatchEvent(new CustomEvent('brewlog:data'));
 }
 
+/** Admins may drop a pending request or an approved member from the roster.
+ * Deletes only the `profiles` row: their beans/cafes/brews (which point at
+ * auth.users, not profiles) are untouched, and so is their actual login —
+ * a publishable key can't delete that, only a service_role key can, and
+ * that never ships to the browser. If they sign back in, a fresh, unapproved
+ * profile is created for them same as any new member. */
+export async function removeMember(memberId) {
+  if (!isAdmin()) throw new Error('Only an admin can do that');
+  if (memberId === userId()) throw new Error('You cannot remove yourself');
+  await sb.del('profiles', `user_id=eq.${encodeURIComponent(memberId)}`);
+  await pullProfiles();
+  document.dispatchEvent(new CustomEvent('brewlog:data'));
+}
+
 /** Whether this account may change `rec` — its owner, or an admin. */
 export function canEdit(rec) { return !isForeign(rec) || isAdmin(); }
 
