@@ -1,0 +1,44 @@
+# Replaces GitHub's built-in Pages builder, which names every run "pages
+# build and deployment" — thirty identical rows you cannot tell apart. With
+# a real workflow, each run is titled with the commit subject that caused it.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, and never cancel one midway: a half-applied deploy
+# would leave the live site serving a mix of old and new modules.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out the site
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # No build step by design — the app is plain ES modules, so the repo
+      # is the artifact. Tests live in test/ and are not shipped.
+      - name: Package the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
