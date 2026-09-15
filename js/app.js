@@ -168,14 +168,50 @@ document.addEventListener('brewlog:data', () => {
   if (REFRESHABLE.test(location.hash || '#/beans')) route();
 });
 
-/* sync status pill in the top bar of whichever view draws one */
-onSyncChange(() => {
+/* Sync status, wherever a view draws one.
+
+   This used to be a 7px dot that differed only in hue, with its explanation in
+   a `title` tooltip. Colour alone is not a signal everyone can read, and iOS
+   has no hover at all — so on a phone the one screen where you would notice
+   trouble was the one screen that could not explain it. A failing sync now
+   says so in words, states when it last tried, and says how many entries it is
+   still holding. */
+function relTime(ts) {
+  const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (secs < 45) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.round(hrs / 24)} d ago`;
+}
+
+function paintSync() {
+  const { status, message, at, pending } = syncState;
+  const cls = status === 'on' ? 'on' : status === 'err' ? 'err' : status === 'busy' ? 'busy' : '';
+
   document.querySelectorAll('[data-sync-dot]').forEach(el => {
-    el.className = `sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}`;
-    el.title = syncState.message;
+    el.className = `sync-dot ${cls}`;
+    el.title = message;
   });
-  document.querySelectorAll('[data-sync-msg]').forEach(el => { el.textContent = syncState.message; });
-});
+  document.querySelectorAll('[data-sync-label]').forEach(el => {
+    el.textContent = status === 'err' ? 'Sync problem' : '';
+    el.hidden = status !== 'err';
+  });
+  document.querySelectorAll('[data-sync-msg]').forEach(el => {
+    el.textContent = message
+      + (pending ? ` · ${pending} ${pending === 1 ? 'entry' : 'entries'} not uploaded` : '');
+  });
+  /* A status line with no timestamp, sitting above a fresher one that
+     disagrees, is its own bug — say when this was from. */
+  document.querySelectorAll('[data-sync-when]').forEach(el => {
+    el.textContent = at ? `Last checked ${relTime(at)}` : '';
+  });
+}
+
+onSyncChange(paintSync);
+/* keep "2 min ago" honest without waiting for the next sync */
+setInterval(paintSync, 30000);
 
 /* ------------------------------------------------------------------ */
 

@@ -616,11 +616,29 @@ export async function saveMyProfile({ display_name, share_log }) {
 const listeners = new Set();
 export function onSyncChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-export let syncState = { status: 'off', message: 'Local only', at: null };
+export let syncState = { status: 'off', message: 'Local only', at: null, pending: 0 };
 
-function setState(status, message) {
-  syncState = { status, message, at: Date.now() };
+/* `pending` is how many rows this device is still holding that the server has
+   not taken. Nothing used to surface that number, so a device could sit on
+   weeks of unsent entries while looking idle. Carried through unchanged unless
+   a caller recounts it. */
+function setState(status, message, extra = {}) {
+  syncState = {
+    status,
+    message,
+    at: Date.now(),
+    pending: extra.pending ?? syncState.pending ?? 0,
+  };
   listeners.forEach(fn => { try { fn(syncState); } catch {} });
+}
+
+/** Rows written here that the server has not accepted yet. */
+async function countPending() {
+  let n = 0;
+  for (const t of TABLES) {
+    n += (await idb.all(t)).filter(r => r._dirty).length;
+  }
+  return n;
 }
 
 const LOCAL_FIELDS = ['_dirty', '_imgDirty'];
@@ -852,17 +870,18 @@ export async function sync() {
     }
     await syncSettings(owner);
     lastSyncAt = Date.now();
+    const pending = await countPending();
     if (refused.length) {
       console.warn('[brewlog] the server refused these rows:', refused);
       const n = refused.length;
-      setState('err', `Synced, but the server refused ${n} ${n === 1 ? 'entry' : 'entries'}`);
+      setState('err', `The server refused ${n} ${n === 1 ? 'entry' : 'entries'}`, { pending });
     } else {
-      setState('on', 'Synced');
+      setState('on', 'Synced', { pending });
     }
     if (changed) document.dispatchEvent(new CustomEvent('brewlog:data'));
     return true;
   } catch (err) {
-    setState('err', err.message || 'Sync failed');
+    setState('err', err.message || 'Sync failed', { pending: await countPending().catch(() => 0) });
     return false;
   } finally {
     syncing = false;

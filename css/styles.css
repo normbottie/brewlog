@@ -1197,9 +1197,32 @@ a.cafe-row:active { transform: scale(.988); }
   text-align: center;
 }
 
+/* Shape carries the state as well as hue: a synced dot is a circle, a failing
+   one is a diamond, a busy one is a hollow ring. Colour alone is not a signal
+   every reader can use, and at 7px two muted pastels are a poor one for
+   anybody. */
 .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: 0 0 auto; }
 .sync-dot.on  { background: #6FBF9A; box-shadow: 0 0 9px rgba(111,191,154,.75); }
-.sync-dot.err { background: #E9A08E; }
+.sync-dot.err { background: #E9A08E; border-radius: 1px; transform: rotate(45deg); }
+.sync-dot.busy { background: transparent; border: 1.5px solid var(--text-faint); }
+
+.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  cursor: pointer;
+  color: inherit;
+}
+.sync-chip .sync-label {
+  font-size: 11.5px;
+  font-weight: 620;
+  letter-spacing: .01em;
+  color: #E9A08E;
+  white-space: nowrap;
+}
 
 /* Installed to the home screen: the browser chrome is gone, and a floating
    pill leaves a dead strip beneath it. Dock the bar to the bottom edge and

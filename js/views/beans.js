@@ -28,8 +28,12 @@ export async function render(root) {
         <div class="sub">${beans.length} bag${beans.length === 1 ? '' : 's'} logged</div>
       </div>
       <div class="spacer"></div>
-      <span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}"
-            data-sync-dot title="${esc(syncState.message)}"></span>
+      <button class="sync-chip" data-syncgo aria-label="Sync status — open Settings">
+        <span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}"
+              data-sync-dot title="${esc(syncState.message)}"></span>
+        <span class="sync-label" data-sync-label ${syncState.status === 'err' ? '' : 'hidden'}>${
+          syncState.status === 'err' ? 'Sync problem' : ''}</span>
+      </button>
       <button class="icon-btn" data-new aria-label="Log a new bag">${icon('plus')}</button>
     </div>
     <div class="view">
@@ -155,6 +159,11 @@ export async function render(root) {
       </div>
     </button>`;
   }
+
+  /* A problem you can see is worth little if you can't get to it. */
+  view.querySelector('[data-syncgo]')?.addEventListener('click', () => {
+    location.hash = '#/settings';
+  });
 
   results.addEventListener('click', e => {
     const b = e.target.closest('[data-go]');

@@ -126,10 +126,11 @@ export async function render(root) {
           <span class="fold-note"><span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}" data-sync-dot></span></span>
         </summary>
       <div class="glass card-pad">
-        <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:3px">
           <span class="sync-dot ${syncState.status === 'on' ? 'on' : syncState.status === 'err' ? 'err' : ''}" data-sync-dot></span>
           <span style="font-size:14px;color:var(--text-muted)" data-sync-msg>${esc(syncState.message)}</span>
         </div>
+        <div class="hint" data-sync-when style="margin-bottom:14px"></div>
         <div class="field">
           <label for="s-url">Supabase project URL</label>
           <input id="s-url" data-url placeholder="https://xxxx.supabase.co" value="${esc(cfg?.url || '')}">
