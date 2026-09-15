@@ -139,13 +139,15 @@ await page.waitForTimeout(3000);
 const pushedD = server.upserts.flatMap(u => u.rows).filter(r => r.id === 'bean-d').pop();
 check('no café pushes as null', pushedD && pushedD.cafe_id === null, pushedD?.cafe_id);
 
-/* ---- roaster page -------------------------------------------------- */
+/* ---- roaster page --------------------------------------------------
+   The header was rebuilt in 9db8985 (portrait beside the facts, not a
+   full-bleed hero), so the roaster link now lives in .head-meta. */
 
 await go('#/bean/bean-a');
-const roasterHref = await page.$eval('.hero .cap a.roaster', el => el.getAttribute('href')).catch(() => 'none');
+const roasterHref = await page.$eval('.head-meta a.roaster', el => el.getAttribute('href')).catch(() => 'none');
 check('the roaster name is a link', roasterHref === '#/roaster/onyx%20coffee%20lab', roasterHref);
 
-await page.click('.hero .cap a.roaster');
+await page.click('.head-meta a.roaster');
 await page.waitForTimeout(2500);
 const bags = await page.$$eval('a.cafe-row', els => els.map(e => e.getAttribute('href')));
 check('the roaster page gathers every bag of theirs',

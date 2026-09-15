@@ -80,6 +80,12 @@ create table if not exists public.brews (
 
 -- upgrading from a version without accounts
 alter table public.beans add column if not exists user_id uuid references auth.users (id) on delete cascade;
+
+/* The café a bag came from. TEXT, and deliberately no foreign key: a uuid
+   column rejects the empty string the form produces, and a constraint would
+   fail the whole batch upsert whenever a bean syncs ahead of its café. The
+   client pushes null, never '', for "no café". */
+alter table public.beans add column if not exists cafe_id text;
 alter table public.cafes add column if not exists user_id uuid references auth.users (id) on delete cascade;
 
 create index if not exists beans_user_updated_idx on public.beans (user_id, updated_at);

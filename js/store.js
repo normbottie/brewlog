@@ -6,6 +6,7 @@ import { idb, metaGet, metaSet, getBlob, putBlob, delBlob } from './idb.js';
 import * as sb from './supabase.js';
 import { accessToken, isSignedIn, userId, onAuthChange } from './auth.js';
 import { getImageAPIConfig, setImageAPIConfig } from './imaging.js';
+import { fold } from './search.js';
 
 // every Supabase request goes out as the signed-in user
 sb.setTokenProvider(accessToken);
@@ -55,6 +56,7 @@ export function blankBean() {
     weight_g: '',
     brew_method: 'Espresso',
     grind: '',
+    cafe_id: '',
     flavor_notes: [],
     ratings: { aromatics: 3, acidity: 3, sweetness: 3, aftertaste: 3, body: 3 },
     overall: 0,
@@ -125,6 +127,79 @@ export async function beanNeighbours(id) {
 }
 export const getBean = (id) => idb.get('beans', id);
 export const getCafe = (id) => idb.get('cafes', id);
+
+/* ---- bean ↔ café ---------------------------------------------------- */
+
+/* A bag records the one café it came from, in `beans.cafe_id`. The column is
+   text with no foreign key: a uuid column rejects the empty string the form
+   produces, and a constraint would fail the whole batch upsert whenever a
+   bean syncs ahead of its café. */
+
+/** The café a bag came from, or null. A deleted café counts as none. */
+export async function cafeForBean(bean) {
+  const id = bean?.cafe_id;
+  if (!id) return null;
+  const cafe = await getCafe(id);
+  return cafe && !cafe.deleted ? cafe : null;
+}
+
+/** Every bag logged as bought at this café, newest first. */
+export async function beansForCafe(cafeId, opts = { shared: true }) {
+  if (!cafeId) return [];
+  /* Shared on purpose: a friend's bag bought at your café is worth seeing,
+     and ids can't collide. */
+  return (await listBeans(opts)).filter(b => b.cafe_id === cafeId);
+}
+
+/* ---- roasters -------------------------------------------------------
+ *
+ * A roaster has no record of its own — it is a name typed on a bag. The key
+ * is that name folded, so "Onyx Coffee Lab" and "  onyx coffee lab " are one
+ * roaster, and the page exists for exactly as long as you own a bag from
+ * them.
+ */
+
+export const roasterKey = (name) => fold(name);
+
+/** Everything derived for one roaster, or null if no bag points there. */
+export async function getRoaster(key, opts = { shared: true }) {
+  const want = roasterKey(key);
+  if (!want) return null;
+  const beans = (await listBeans(opts)).filter(b => roasterKey(b.roaster) === want);
+  if (!beans.length) return null;
+
+  const uniq = (vals) => [...new Set(vals.map(v => String(v || '').trim()).filter(Boolean))];
+  /* The display name is the spelling on the most recently logged bag: people
+     correct a roaster's name over time, and the latest is the one they mean. */
+  const newest = [...beans].sort((a, b) =>
+    String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+
+  const ratings = {};
+  for (const a of AXES) {
+    const vals = beans.map(b => Number(b.ratings?.[a]) || 0);
+    ratings[a] = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
+  }
+
+  /* Overall averages over RATED bags only. A bag you haven't scored is not a
+     zero — counting it as one would drag every roaster toward the floor. */
+  const rated = beans.filter(b => Number(b.overall) > 0);
+  const avgOverall = rated.length
+    ? rated.reduce((s, b) => s + Number(b.overall), 0) / rated.length
+    : 0;
+
+  return {
+    key: want,
+    name: String(newest?.roaster || '').trim(),
+    beans,
+    count: beans.length,
+    rated: rated.length,
+    avgOverall,
+    ratings,
+    origins: uniq(beans.map(b => b.origin)),
+    processes: uniq(beans.map(b => b.process)),
+    methods: uniq(beans.map(b => b.brew_method)),
+  };
+}
 
 /* ---- write --------------------------------------------------------- */
 
@@ -549,6 +624,10 @@ function toRemote(rec, owner) {
      and RLS would reject it anyway, since the row already belongs to
      someone else. New local rows have no owner yet, so they get one. */
   out.user_id = rec.user_id || owner;
+  /* "No café" is null, never "". The column is text with no foreign key, so
+     an empty string would sync happily and then read back as a link to a
+     café whose id is the empty string. */
+  if ('cafe_id' in out) out.cafe_id = out.cafe_id || null;
   return out;
 }
 

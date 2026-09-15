@@ -1,6 +1,6 @@
 /* Brewlog service worker — app shell cached, map tiles cached opportunistically. */
 
-const VERSION = 'brewlog-v10';
+const VERSION = 'brewlog-v11';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 

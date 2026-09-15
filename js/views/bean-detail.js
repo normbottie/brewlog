@@ -7,10 +7,12 @@
 import {
   getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById,
   importBean, myBeanLike, beanNeighbours, canEdit, listBrews, brewImageURL,
+  cafeForBean, roasterKey,
 } from '../store.js';
 import { brewSheet, thumbIcon } from './brew-sheet.js';
 import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
 import { radarSVG } from '../radar.js';
+import { shareBeanCard } from '../card.js';
 
 /* Five columns across a phone leaves no room for "Aromatics"; the radar
    beside them already carries the full names. */
@@ -74,6 +76,8 @@ export async function render(root, id) {
 
   const { prev, next, index, total } = await beanNeighbours(id);
   const brews = await listBrews(id);
+  const cafe = await cafeForBean(b);
+  const rKey = roasterKey(b.roaster);
 
   const view = h(`<div>
     <div class="topbar">
@@ -95,7 +99,9 @@ export async function render(root, id) {
           </button>
           <div class="head-meta">
             <h2>${esc(b.name || 'Untitled')}</h2>
-            ${b.roaster ? `<div class="roaster">${esc(b.roaster)}</div>` : ''}
+            ${b.roaster ? (rKey
+              ? `<a class="roaster link" href="#/roaster/${encodeURIComponent(rKey)}">${esc(b.roaster)}</a>`
+              : `<div class="roaster">${esc(b.roaster)}</div>`) : ''}
             ${b.overall ? `<div style="margin-top:7px">${stars(b.overall)}</div>` : ''}
             ${headFacts.length ? `<dl class="head-facts">${headFacts.map(([k, v]) =>
               `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
@@ -116,6 +122,16 @@ export async function render(root, id) {
         <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px">
           ${b.flavor_notes.map(n => `<span class="chip">${esc(n)}</span>`).join('')}
         </div>` : ''}
+
+      ${cafe ? `<a class="glass cafe-row" href="#/cafe/${esc(cafe.id)}" style="margin-bottom:16px">
+          <div class="avatar">${esc((cafe.name || '?').trim().charAt(0).toUpperCase())}</div>
+          <div class="body">
+            <div class="hint" style="margin:0 0 1px">Got it at</div>
+            <div class="nm">${esc(cafe.name || 'Untitled')}</div>
+            <div class="addr">${esc(cafe.address || 'No address')}</div>
+          </div>
+          <span class="chev">${icon('back')}</span>
+        </a>` : ''}
 
       <div class="brews-head">
         <h2 class="section" style="margin:0">Brews</h2>
@@ -143,6 +159,9 @@ export async function render(root, id) {
       ${b.notes ? `<h2 class="section">Notes</h2>
         <div class="glass card-pad"><div class="notes-body">${esc(b.notes)}</div></div>` : ''}
 
+      <div style="height:20px"></div>
+      <button class="btn-block" data-card>${icon('card')} Make a share card</button>
+
       <div style="height:14px"></div>
       <div class="hint" style="text-align:center">Logged ${fmtDate(b.created_at)}</div>
     </div>
@@ -155,6 +174,21 @@ export async function render(root, id) {
       await removeBean(b.id);
       toast('Deleted');
       goReplace('#/beans');   // don't leave a deleted bean in the back stack
+    }
+  });
+
+  const cardBtn = view.querySelector('[data-card]');
+  cardBtn?.addEventListener('click', async () => {
+    const label = cardBtn.innerHTML;
+    cardBtn.disabled = true;
+    cardBtn.innerHTML = '<span class="spinner"></span> Drawing…';
+    try {
+      await shareBeanCard(b, { cafe });
+    } catch (err) {
+      toast(err.message || 'Could not make the card');
+    } finally {
+      cardBtn.disabled = false;
+      cardBtn.innerHTML = label;
     }
   });
 
