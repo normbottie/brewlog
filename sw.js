@@ -73,7 +73,7 @@ self.addEventListener('fetch', (e) => {
   if (/supabase\.co|googleapis\.com|api\.openai\.com|nominatim|overpass/.test(url.hostname)) return;
 
   // map tiles: cache-first, capped
-  if (/tile\.openstreetmap\.org$|basemaps\.cartocdn\.com$/.test(url.hostname)) {
+  if (/tile\.openstreetmap\.org$|server\.arcgisonline\.com$/.test(url.hostname)) {
     e.respondWith(
       caches.open(TILES).then(async (cache) => {
         const hit = await cache.match(request);

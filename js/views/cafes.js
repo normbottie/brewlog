@@ -11,6 +11,10 @@ let clusters = null;
 
 const scope = { shared: false };
 const LS_SHARED = 'brewlog.scope.cafes';
+const LS_SORT = 'brewlog.sort.cafes';
+/* 'visited' = most recently visited first, 'name' = A-Z. */
+let sortBy = 'visited';
+try { if (localStorage.getItem(LS_SORT) === 'name') sortBy = 'name'; } catch {}
 try { scope.shared = localStorage.getItem(LS_SHARED) === '1'; } catch {}
 
 export async function render(root) {
@@ -46,6 +50,10 @@ export async function render(root) {
         <input type="search" placeholder="Search your cafés…" data-q>
       </div>
       <div data-findweb></div>
+      <div class="scope-toggle" data-sort style="margin-top:12px">
+        <button data-sb="visited" aria-pressed="${sortBy === 'visited'}">Last visited</button>
+        <button data-sb="name" aria-pressed="${sortBy === 'name'}">A–Z</button>
+      </div>
       ${others.length ? `<div class="scope-toggle" data-scope>
         <button data-sc="mine" aria-pressed="${!scope.shared}">Mine</button>
         <button data-sc="all" aria-pressed="${scope.shared}">Everyone</button>
@@ -69,6 +77,22 @@ export async function render(root) {
       : '';
   }
 
+  /* A-Z is a plain name sort. "Last visited" reads visited_on, which is a
+     date-only string, so same-day visits would otherwise come back in
+     whatever order IndexedDB handed them over — updated_at breaks the tie. */
+  function sorted(rows) {
+    const copy = rows.slice();
+    if (sortBy === 'name') {
+      copy.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined,
+        { sensitivity: 'base', numeric: true }));
+    } else {
+      copy.sort((a, b) =>
+        (b.visited_on || '').localeCompare(a.visited_on || '') ||
+        (b.updated_at || '').localeCompare(a.updated_at || ''));
+    }
+    return copy;
+  }
+
   function paint() {
     paintFindWeb();
     /* Folded on both sides. The apostrophe iOS substitutes as you type (’)
@@ -88,8 +112,8 @@ export async function render(root) {
     /* Places you mean to try are a different kind of thing from places you
        have an opinion about, so they get their own section rather than
        sitting in the list behind an empty row of stars. */
-    const want = rows.filter(isWishlist);
-    const been = rows.filter(c => !isWishlist(c));
+    const want = sorted(rows.filter(isWishlist));
+    const been = sorted(rows.filter(c => !isWishlist(c)));
     listEl.innerHTML =
       (want.length ? `<h2 class="section">Want to visit · ${want.length}</h2>${cards(want)}` : '') +
       (been.length
@@ -119,6 +143,19 @@ export async function render(root) {
   }
 
   qEl.addEventListener('input', paint);
+
+  /* Sort is a view preference, not a data change: repaint the list rather
+     than dispatching brewlog:data, which would re-route and rebuild the map. */
+  view.querySelector('[data-sort]')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sb]');
+    if (!b || b.dataset.sb === sortBy) return;
+    sortBy = b.dataset.sb;
+    try { localStorage.setItem(LS_SORT, sortBy); } catch {}
+    view.querySelectorAll('[data-sb]').forEach(el => {
+      el.setAttribute('aria-pressed', String(el.dataset.sb === sortBy));
+    });
+    paint();
+  });
 
   view.querySelector('[data-scope]')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-sc]');
@@ -246,10 +283,28 @@ export async function render(root) {
      that checks the control more than the clustering. Reading only. */
   window.__brewlogMap = map;
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  /* Esri's Dark Gray Canvas, not CARTO: CARTO began requiring an API key for
+     their public basemaps and now stamps "API KEY REQUIRED" diagonally across
+     every unkeyed tile. Esri's equivalent needs no key and no account.
+
+     Two layers, because Esri splits the canvas from its labels the way CARTO's
+     dark_all did not — base first, place names on top.
+
+     Note the {z}/{y}/{x} order: Esri puts row before column, and getting it the
+     usual way round yields tiles from the wrong hemisphere rather than an error.
+     maxNativeZoom caps the fetch at 16, which is as deep as this service is
+     drawn; Leaflet upscales past that so pin-dropping still zooms in. */
+  const esri = (service) =>
+    `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${service}/MapServer/tile/{z}/{y}/{x}`;
+
+  L.tileLayer(esri('World_Dark_Gray_Base'), {
     maxZoom: 20,
-    subdomains: 'abcd',
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    maxNativeZoom: 16,
+    attribution: '&copy; OpenStreetMap | Tiles &copy; Esri',
+  }).addTo(map);
+  L.tileLayer(esri('World_Dark_Gray_Reference'), {
+    maxZoom: 20,
+    maxNativeZoom: 16,
   }).addTo(map);
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 28] });
