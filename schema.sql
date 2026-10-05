@@ -59,17 +59,21 @@ create table if not exists public.cafes (
   deleted     boolean default false
 );
 
--- One cup, on one day, from a particular bag. The bag keeps its own tasting
--- profile; a brew never touches it. `verdict` is 'up', 'down', or null —
--- null is the common case, since most cups get no opinion recorded.
+-- One cup, on one day, from a particular bag: how it was brewed, how it
+-- tasted, and what you thought of it. The bag's own tasting profile is just
+-- the average of its brews' `ratings`, recomputed on the fly — nothing to
+-- keep in sync here. `verdict` is 'up', 'neutral', 'down', or null — null is
+-- the common case, since most cups get no opinion recorded.
 create table if not exists public.brews (
   id          uuid primary key,
   user_id     uuid references auth.users (id) on delete cascade,
   bean_id     uuid,
   brewed_on   text,
   method      text,
+  grind       text,
   recipe      text,
   verdict     text,
+  ratings     jsonb default '{}'::jsonb,
   notes       text,
   image_url   text,
   thumb_url   text,
@@ -87,6 +91,10 @@ alter table public.beans add column if not exists user_id uuid references auth.u
    client pushes null, never '', for "no café". */
 alter table public.beans add column if not exists cafe_id text;
 alter table public.cafes add column if not exists user_id uuid references auth.users (id) on delete cascade;
+
+-- upgrading from a version where grind and tasting profile lived on the bag
+alter table public.brews add column if not exists grind text;
+alter table public.brews add column if not exists ratings jsonb default '{}'::jsonb;
 
 create index if not exists beans_user_updated_idx on public.beans (user_id, updated_at);
 create index if not exists cafes_user_updated_idx on public.cafes (user_id, updated_at);

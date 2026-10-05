@@ -1,0 +1,174 @@
+diff --git a/css/styles.css b/css/styles.css
+index d34157c..209bf47 100644
+--- a/css/styles.css
++++ b/css/styles.css
+@@ -364,7 +364,16 @@ select {
+     radial-gradient(70% 55% at 50% 34%, rgba(201,168,124,.20), transparent 70%),
+     linear-gradient(178deg, #241C17, #14100D);
+ }
+-.bean-card .meta { padding: 11px 13px 13px; }
++/* Grid stretches every card to the tallest in its row. Let .meta take up
++   that slack and push .row to the bottom, so the rating sits on the same
++   line across the row whether or not the bag carries an owner badge. */
++.bean-card .meta {
++  padding: 11px 13px 13px;
++  flex: 1;
++  display: flex;
++  flex-direction: column;
++  min-height: 0;
++}
+ .bean-card .name {
+   font-weight: 620;
+   font-size: 15px;
+@@ -387,7 +396,8 @@ select {
+   display: flex;
+   align-items: center;
+   gap: 7px;
+-  margin-top: 9px;
++  margin-top: auto;
++  padding-top: 9px;
+ }
+ 
+ .chip {
+diff --git a/js/places.js b/js/places.js
+index 9cd1751..11ab72e 100644
+--- a/js/places.js
++++ b/js/places.js
+@@ -9,6 +9,30 @@ const ENDPOINTS = [
+   'https://overpass.kumi.systems/api/interpreter',
+ ];
+ 
++/* Chains, excluded from the *sweep* of an area — "every café near me" is a
++   question about places worth going, and forty Starbucks drown the answer.
++   Matched on OSM's `brand` first (that is what the tag is for) and on the
++   name second, folded, so "Dunkin'" and "Dunkin Donuts" both land.
++
++   Deliberately NOT applied to searching by name: if you go looking for a
++   Starbucks you mean it, and one may well be on your want-to-visit list. */
++const CHAINS = [
++  'starbucks', 'dunkin', 'tim hortons', 'costa coffee', 'caribou coffee',
++  'peets coffee', 'peets coffee tea', 'the coffee bean tea leaf',
++  'coffee bean tea leaf', 'mcdonalds', 'mccafe', 'panera bread', 'panera',
++  'krispy kreme', 'dutch bros', 'dutch bros coffee', 'scooters coffee',
++  'biggby coffee', 'gloria jeans coffees', 'pret a manger', 'einstein bros bagels',
++  'brueggers bagels', 'au bon pain', 'cinnabon', 'seattles best coffee',
++  '7 eleven', 'wawa', 'sheetz', 'circle k', 'speedway', 'quiktrip', 'racetrac',
++  'cumberland farms', 'kwik trip', 'buc ees', 'subway', 'chick fil a',
++];
++
++function isChain(tags = {}) {
++  const brand = fold(tags.brand || tags.operator || '');
++  const name = fold(tags.name || '');
++  return CHAINS.some(c => brand === c || name === c || name.startsWith(c + ' '));
++}
++
+ const R_EARTH = 6371000;
+ 
+ export function distanceMeters(a, b) {
+@@ -99,6 +123,7 @@ out center;`;
+           const tags = el.tags || {};
+           const name = (tags.name || '').trim();
+           if (!name) return null;
++          if (isChain(tags)) return null;
+           const key = name.toLowerCase() + Math.round(p.lat * 1e4) + Math.round(p.lon * 1e4);
+           if (seen.has(key)) return null;
+           seen.add(key);
+diff --git a/js/store.js b/js/store.js
+index 4172ddb..b1f89bc 100644
+--- a/js/store.js
++++ b/js/store.js
+@@ -727,6 +727,23 @@ export async function sync() {
+       await metaSet('sync:roster', roster);
+     }
+ 
++    /* `updated_at` used to be stamped by whichever device wrote the row. A
++       phone running even slightly behind the desktop produced rows *below*
++       the desktop's pull watermark, and an incremental fetch never asked for
++       them again — cafés added on one device simply never arrived on the
++       other. The column is server-stamped now (see schema.sql); clear the
++       watermarks once so anything stranded under the old scheme comes down. */
++    if (!(await metaGet('sync:servertime', null))) {
++      await metaSet('sync:beans', null);
++      await metaSet('sync:cafes', null);
++      await metaSet('sync:brews', null);
++      await metaSet('sync:servertime', '1');
++    }
++
++    /* Only repaint if the sync actually brought news. Firing this every time
++       made returning to the window look like a page reload. */
++    let changed = false;
++
+     for (const table of ['beans', 'cafes', 'brews']) {
+       /* --- push --- */
+       const local = await idb.all(table);
+@@ -792,18 +809,18 @@ export async function sync() {
+           if (mine?._dirty) continue;
+           if (!mine || (r.updated_at || '') > (mine.updated_at || '')) merged.push(r);
+         }
+-        if (merged.length) await idb.putAll(table, merged);
++        if (merged.length) { await idb.putAll(table, merged); changed = true; }
+         if (watermark) await metaSet(`sync:${table}`, watermark);
+       }
+ 
+       /* RLS simply stops returning the rows of a member who switched
+          sharing off; the copies already on this device have to go too. */
+-      if (rosterChanged) await purgeUnshared(table);
++      if (rosterChanged) { await purgeUnshared(table); changed = true; }
+     }
+     await syncSettings(owner);
+     lastSyncAt = Date.now();
+     setState('on', 'Synced');
+-    document.dispatchEvent(new CustomEvent('brewlog:data'));
++    if (changed) document.dispatchEvent(new CustomEvent('brewlog:data'));
+     return true;
+   } catch (err) {
+     setState('err', err.message || 'Sync failed');
+diff --git a/schema.sql b/schema.sql
+index 5ffc234..9b8e99f 100644
+--- a/schema.sql
++++ b/schema.sql
+@@ -91,6 +91,44 @@ alter table public.cafes add column if not exists user_id uuid references auth.u
+ create index if not exists beans_user_updated_idx on public.beans (user_id, updated_at);
+ create index if not exists cafes_user_updated_idx on public.cafes (user_id, updated_at);
+ create index if not exists brews_user_updated_idx on public.brews (user_id, updated_at);
++
++-- ---------------------------------------------------------------------------
++-- updated_at belongs to the server, not to whoever wrote the row.
++--
++-- Sync pulls incrementally with `updated_at >= <watermark>`, and the watermark
++-- is whatever timestamp the last pull saw. While each device stamped its own
++-- rows, a phone a minute behind the desktop wrote rows *underneath* the
++-- desktop's watermark, and the desktop never asked for them again — they were
++-- invisible for ever, with no error anywhere. One clock fixes it.
++--
++-- The client still sends updated_at (it is what last-write-wins compares on
++-- the way in); this simply overwrites it with server time on the way into the
++-- table, so every watermark and every comparison is in the same clock.
++-- ---------------------------------------------------------------------------
++create or replace function public.touch_updated_at()
++returns trigger
++language plpgsql
++as $$
++begin
++  new.updated_at = now();
++  return new;
++end;
++$$;
++
++drop trigger if exists beans_touch_updated_at on public.beans;
++create trigger beans_touch_updated_at
++  before insert or update on public.beans
++  for each row execute function public.touch_updated_at();
++
++drop trigger if exists cafes_touch_updated_at on public.cafes;
++create trigger cafes_touch_updated_at
++  before insert or update on public.cafes
++  for each row execute function public.touch_updated_at();
++
++drop trigger if exists brews_touch_updated_at on public.brews;
++create trigger brews_touch_updated_at
++  before insert or update on public.brews
++  for each row execute function public.touch_updated_at();
+ -- the strip on a bean screen reads by bean, newest first
+ create index if not exists brews_bean_idx on public.brews (bean_id, brewed_on desc);
+ 

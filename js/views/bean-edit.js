@@ -3,15 +3,12 @@
 import {
   getBean, saveBean, blankBean, setBeanImage, beanImageURL, beanRawBlob, isForeign, canEdit,
   listCafes, getCafe,
-  AXES, AXIS_LABELS, BREW_METHODS, ROAST_LEVELS, PROCESSES,
+  ROAST_LEVELS, PROCESSES,
 } from '../store.js';
-import { h, esc, icon, stars, bindStars, toast, bindRange, goReplace } from '../ui.js';
-import { radarSVG } from '../radar.js';
+import { h, esc, icon, toast, goReplace } from '../ui.js';
 import {
   fileToImage, plainFrame, apiStudio, readBagLabel, hasImageAPI,
 } from '../imaging.js';
-
-const fmtR = (v) => Number(v ?? 0).toFixed(1);
 
 export async function render(root, id) {
   const isNew = !id;
@@ -22,7 +19,6 @@ export async function render(root, id) {
     goReplace(`#/bean/${id}`);
     return;
   }
-  bean.ratings = { ...{ aromatics: 3, acidity: 3, sweetness: 3, aftertaste: 3, body: 3 }, ...(bean.ratings || {}) };
   bean.cafe_id = bean.cafe_id || '';
 
   /* Only your own cafés can be picked. A bag already pointing at one that
@@ -147,44 +143,11 @@ export async function render(root, id) {
            </div>`}
       </div>
 
-      <h2 class="section">How you brewed it</h2>
-      <div class="glass card-pad">
-        <div class="seg" data-brew>
-          ${BREW_METHODS.map(m =>
-            `<button type="button" data-brewm="${esc(m)}" aria-pressed="${m === bean.brew_method}">${esc(m)}</button>`).join('')}
-        </div>
-        <div class="field" style="margin:15px 0 0">
-          <label for="f-grind">Grind / recipe</label>
-          <input id="f-grind" data-f="grind" placeholder="18g in, 38g out, 27s" value="${esc(bean.grind)}">
-        </div>
-      </div>
-
-      <h2 class="section">Tasting profile</h2>
-      <div class="glass radar-wrap" data-radar>${radarSVG(bean.ratings)}</div>
-      <div class="glass card-pad" style="margin-top:12px">
-        ${AXES.map(a => `<div class="slider-row">
-          <div class="lbl">${AXIS_LABELS[a]}</div>
-          <input type="range" min="0" max="5" step="0.1" value="${bean.ratings[a]}" data-axis="${a}"
-                 aria-label="${AXIS_LABELS[a]}">
-          <div class="val" data-axisval="${a}">${fmtR(bean.ratings[a])}</div>
-        </div>`).join('')}
-      </div>
-
-      <h2 class="section">Overall</h2>
-      <div class="glass card-pad" style="text-align:center">
-        <div data-overall>${stars(bean.overall, { size: 'lg', interactive: true })}</div>
-      </div>
-
       <h2 class="section">Flavour notes</h2>
       <div class="glass card-pad">
         <input data-f="flavor_notes" placeholder="blackcurrant, jasmine, brown sugar"
                value="${esc((bean.flavor_notes || []).join(', '))}">
         <div class="hint">Comma separated.</div>
-      </div>
-
-      <h2 class="section">Notes</h2>
-      <div class="glass card-pad">
-        <textarea data-f="notes" placeholder="What stood out? How did it change as it rested?">${esc(bean.notes)}</textarea>
       </div>
 
       <div style="height:20px"></div>
@@ -353,42 +316,10 @@ export async function render(root, id) {
       filled.push('flavour notes');
     }
 
-    const brew = BREW_METHODS.find(m => m.toLowerCase() === String(found.brew_method || '').toLowerCase());
-    if (brew) {
-      bean.brew_method = brew;
-      view.querySelectorAll('[data-brewm]').forEach(x =>
-        x.setAttribute('aria-pressed', String(x.dataset.brewm === brew)));
-      filled.push('brew method');
-    }
     return filled;
   }
 
   /* ---------- form wiring ---------- */
-
-  view.querySelector('[data-brew]').addEventListener('click', e => {
-    const b = e.target.closest('[data-brewm]');
-    if (!b) return;
-    bean.brew_method = b.dataset.brewm;
-    view.querySelectorAll('[data-brewm]').forEach(x =>
-      x.setAttribute('aria-pressed', String(x.dataset.brewm === bean.brew_method)));
-  });
-
-  const radarBox = view.querySelector('[data-radar]');
-  view.querySelectorAll('[data-axis]').forEach(inp => {
-    bindRange(inp);
-    inp.addEventListener('input', () => {
-      const a = inp.dataset.axis;
-      bean.ratings[a] = Math.round(Number(inp.value) * 10) / 10;
-      view.querySelector(`[data-axisval="${a}"]`).textContent = fmtR(bean.ratings[a]);
-      radarBox.innerHTML = radarSVG(bean.ratings);
-    });
-  });
-
-  const overallBox = view.querySelector('[data-overall]');
-  bindStars(overallBox, v => {
-    bean.overall = bean.overall === v ? 0 : v;
-    overallBox.innerHTML = stars(bean.overall, { size: 'lg', interactive: true });
-  });
 
   view.querySelector('[data-back]').onclick = () =>
     history.length > 1 ? history.back() : (location.hash = '#/beans');

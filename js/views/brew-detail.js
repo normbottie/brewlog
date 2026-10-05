@@ -30,6 +30,7 @@ export async function render(root, id) {
   const kv = [
     ['Method', brew.method],
     ['Date', brew.brewed_on ? fmtDate(brew.brewed_on) : ''],
+    ['Grind', brew.grind],
     ['Recipe', brew.recipe],
   ].filter(([, v]) => v);
 

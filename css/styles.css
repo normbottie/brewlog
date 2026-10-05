@@ -720,7 +720,7 @@ select {
   border: 1px solid rgba(255,240,220,.16);
   color: var(--tan-bright);
 }
-.brew-verdict.down { color: var(--text-muted); }
+.brew-verdict.down, .brew-verdict.neutral { color: var(--text-muted); }
 .brew-foot {
   margin-top: 12px; padding-top: 11px;
   border-top: 1px solid var(--glass-brd);
@@ -767,8 +767,11 @@ select {
   border-color: rgba(228,199,154,.5);
   color: var(--tan-bright); font-weight: 620;
 }
-/* "not great" is a verdict, not an error — it should not read as alarming */
-.verdict button[data-v="down"][aria-pressed="true"] {
+/* "not great" is a verdict, not an error — it should not read as alarming;
+   "fine" gets the same quiet treatment, since neither is the warm highlight
+   a genuine thumbs-up earns. */
+.verdict button[data-v="down"][aria-pressed="true"],
+.verdict button[data-v="neutral"][aria-pressed="true"] {
   background: rgba(255,255,255,.07);
   border-color: rgba(255,240,220,.3);
   color: var(--text);
@@ -782,7 +785,7 @@ select {
   color: var(--tan-bright);
   font-size: 12px; font-weight: 620; letter-spacing: .04em; text-transform: uppercase;
 }
-.verdict-chip.down {
+.verdict-chip.down, .verdict-chip.neutral {
   border-color: var(--glass-brd);
   background: rgba(255,255,255,.05);
   color: var(--text-muted);

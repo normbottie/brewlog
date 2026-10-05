@@ -71,7 +71,6 @@ export async function render(root, id) {
             <div class="body">
               <div class="nm">${esc(b.name || 'Untitled')}</div>
               <div class="addr">${esc(b.roaster || '—')}</div>
-              ${b.overall ? `<div style="margin-top:5px">${stars(b.overall)}</div>` : ''}
             </div>
             <span class="chev">${icon('back')}</span>
           </a>`).join('')}</div>` : ''}
