@@ -209,10 +209,15 @@ create trigger profiles_guard_flags
   before insert or update on public.profiles
   for each row execute function public.guard_profile_flags();
 
--- every member can see who is sharing (name only, never the email)
+-- Approved members can see who else is a member and who is sharing (name
+-- only, never the email). Someone still waiting for approval sees only their
+-- own row: signing up is open, so the roster -- display names default to
+-- the start of each email address -- must not be readable by anyone who
+-- merely asks for a code.
 drop policy if exists "profiles readable" on public.profiles;
 create policy "profiles readable" on public.profiles
-  for select to authenticated using (true);
+  for select to authenticated
+  using (auth.uid() = user_id or public.is_approved());
 
 drop policy if exists "own profile write" on public.profiles;
 create policy "own profile write" on public.profiles
@@ -459,9 +464,15 @@ end $$;
 
 do $$
 begin
-  insert into storage.buckets (id, name, public)
-  values ('bag-images', 'bag-images', false)
-  on conflict (id) do update set public = false;
+  /* Photos only, and only photo-sized: anything else would turn the bucket
+     into free file hosting on this project's domain. */
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('bag-images', 'bag-images', false, 10485760,
+          array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+    set public = false,
+        file_size_limit = excluded.file_size_limit,
+        allowed_mime_types = excluded.allowed_mime_types;
   raise notice 'Storage: bucket bag-images ready (private).';
 exception when others then
   raise notice 'Storage: could not create the bucket (%). Create it by hand: Storage -> New bucket -> name it bag-images -> leave Public UNticked.', sqlerrm;
@@ -492,12 +503,17 @@ begin
     $p$create policy "bag images write" on storage.objects
         for insert to authenticated
         with check (bucket_id = 'bag-images'
-                    and (storage.foldername(name))[1] = auth.uid()::text)$p$,
+                    and (storage.foldername(name))[1] = auth.uid()::text
+                    and public.is_approved())$p$,
     $p$drop policy if exists "bag images update" on storage.objects$p$,
     $p$create policy "bag images update" on storage.objects
         for update to authenticated
         using (bucket_id = 'bag-images'
-               and (storage.foldername(name))[1] = auth.uid()::text)$p$,
+               and (storage.foldername(name))[1] = auth.uid()::text
+               and public.is_approved())
+        with check (bucket_id = 'bag-images'
+                    and (storage.foldername(name))[1] = auth.uid()::text
+                    and public.is_approved())$p$,
     $p$drop policy if exists "bag images delete" on storage.objects$p$,
     $p$create policy "bag images delete" on storage.objects
         for delete to authenticated

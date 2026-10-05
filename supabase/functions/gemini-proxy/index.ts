@@ -4,8 +4,7 @@
 // read labels without the key ever reaching a browser. Deploy this as an
 // Edge Function named `gemini-proxy` and set the GEMINI_API_KEY secret.
 //
-// Access: any signed-in user of this project. Control who that is with
-// Authentication -> Sign In / Providers -> "Allow new users to sign up".
+// Access: signed-in members whose profile is approved (or admins).
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -38,9 +37,34 @@ Deno.serve(async (req) => {
     return json(401, { error: { message: "Sign in to use AI features" } });
   }
 
-  // Forward one request to the Gemini API, key injected server-side.
+  // Signing up is open, so an account alone is not enough: only members an
+  // admin has approved may spend the key. Asked as the caller, so RLS lets
+  // them see exactly their own profile row.
+  const profRes = await fetch(
+    `${Deno.env.get("SUPABASE_URL")}/rest/v1/profiles?select=approved,is_admin&user_id=eq.${encodeURIComponent(user.id)}`,
+    {
+      headers: {
+        Authorization: auth,
+        apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      },
+    },
+  );
+  const prof = profRes.ok ? (await profRes.json())?.[0] : null;
+  if (!prof?.approved && !prof?.is_admin) {
+    return json(403, { error: { message: "Your account is waiting for approval" } });
+  }
+
+  // Forward one request to the Gemini API, key injected server-side. Only
+  // the calls the app actually makes are allowed through — anything else
+  // under /v1beta/ (files, cached content, tuned models, …) could read or
+  // delete things on the key's project.
   const path = new URL(req.url).searchParams.get("path") ?? "";
-  if (!path.startsWith("/v1beta/") || path.includes("..")) {
+  const allowed =
+    (req.method === "GET" && /^\/v1beta\/models(\?pageSize=\d{1,4})?$/.test(path)) ||
+    (req.method === "POST" &&
+      (/^\/v1beta\/models\/[A-Za-z0-9._-]+:generateContent$/.test(path) ||
+        path === "/v1beta/interactions"));
+  if (!allowed) {
     return json(400, { error: { message: "Bad path" } });
   }
 

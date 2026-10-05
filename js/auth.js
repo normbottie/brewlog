@@ -8,6 +8,12 @@
 import { getConfig } from './supabase.js';
 
 const LS_SESSION = 'brewlog.auth.session';
+/* When this browser last asked for a sign-in email. Tokens arriving in the
+   URL are only trusted inside that window: otherwise anyone could send a
+   link carrying *their own* tokens, sign you into their account, and have
+   your unsynced log upload into it. */
+const LS_PENDING = 'brewlog.auth.pending';
+const PENDING_TTL = 60 * 60 * 1000;   // Supabase links expire within the hour
 
 let session = null;      // { access_token, refresh_token, expires_at, user }
 const listeners = new Set();
@@ -90,6 +96,7 @@ async function authFetch(path, options = {}) {
 export async function signIn(email) {
   const clean = String(email || '').trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That does not look like an email address');
+  try { localStorage.setItem(LS_PENDING, String(Date.now())); } catch {}
   await authFetch('otp', {
     method: 'POST',
     body: JSON.stringify({
@@ -127,6 +134,7 @@ export async function verifyCode(email, code) {
   if (!payload) throw firstErr;
   const next = shape(payload);
   next.user = payload.user || await fetchUser(next.access_token);
+  try { localStorage.removeItem(LS_PENDING); } catch {}
   store(next);
   return next;
 }
@@ -179,6 +187,17 @@ export async function captureSession() {
   }
 
   const access = params.get('access_token');
+  if (access) {
+    let asked = 0;
+    try { asked = Number(localStorage.getItem(LS_PENDING)) || 0; } catch {}
+    if (!(Date.now() - asked < PENDING_TTL)) {
+      history.replaceState(null, '', location.pathname + '#/settings');
+      throw new Error(
+        'That sign-in link was not requested from this browser, so it was ignored. ' +
+        'Ask for a new one here, or enter the code from the email.'
+      );
+    }
+  }
   if (!access) {
     // PKCE-style callback: we have no verifier without the SDK
     if (new URLSearchParams(location.search).get('code')) {
@@ -198,6 +217,7 @@ export async function captureSession() {
     expires_in: params.get('expires_in'),
   });
   next.user = await fetchUser(access);
+  try { localStorage.removeItem(LS_PENDING); } catch {}
   store(next);
   history.replaceState(null, '', location.pathname + '#/beans');
   return true;

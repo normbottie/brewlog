@@ -1,6 +1,6 @@
 /* Router + shell. */
 
-import { icon, toast } from './ui.js';
+import { esc, icon, toast } from './ui.js';
 import {
   queueSync, onSyncChange, syncState, loadCachedProfiles, needsOnboarding, isApproved,
 } from './store.js';
@@ -148,7 +148,7 @@ async function doRoute() {
   } catch (err) {
     console.error(err);
     app.innerHTML = `<div class="view"><div class="empty glass card-pad">
-      <h3>Something went wrong</h3><p>${String(err.message || err)}</p></div></div>`;
+      <h3>Something went wrong</h3><p>${esc(err.message || err)}</p></div></div>`;
   }
 }
 

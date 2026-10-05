@@ -58,13 +58,21 @@ off-device backup of the bag photos.
 
 Sync is last-write-wins on `updated_at`, and pushes queue up while offline.
 
-**Security model.** Sign-in is a passwordless magic link. Every row carries a
-`user_id`, and the policies only ever match `auth.uid() = user_id`, so accounts
-cannot see each other's logs and the anon key on its own grants nothing. Bag
-images live at `bag-images/<user-id>/<bean-id>.jpg`; the bucket is public for
-reads so a plain `<img>` tag works, which means someone who guessed a full URL
-could view that one image. To close that off, make the bucket private and
-switch `beanImageURL()` to signed URLs.
+**Security model.** Sign-in is a passwordless email link or code. Anyone can
+sign up, but a new account can do nothing until an admin approves it in
+Settings: it cannot write rows, upload photos, see the member list, or use
+the AI features through `gemini-proxy`. Every row carries a `user_id`; you
+can always read and write your own, approved members can read the logs of
+members who opted into sharing, and only admins can change other people's
+rows. The anon/publishable key on its own grants nothing.
+
+Bag photos live at `bag-images/<user-id>/<bean-id>.jpg` in a **private**
+bucket (images only, 10 MB max). The app keeps the storage path and asks for
+a short-lived signed URL each time it shows one, and it never fetches a photo
+from anywhere other than your own Supabase project. A sign-in link is only
+accepted by the browser that asked for it, so nobody can send you a link that
+signs you into their account. `index.html` sets a Content Security Policy
+that only allows scripts from the site itself.
 
 If you used the earlier shared-key schema, re-running `schema.sql` drops those
 policies and adopts your existing rows into your account — sign in through the

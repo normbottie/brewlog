@@ -65,6 +65,12 @@ select report('newcomer can still set their own display name',
   exists(select 1 from public.profiles
          where user_id = auth.uid() and display_name = 'Newcomer'), true);
 
+-- the roster is for members, not for anyone who asked for a code
+select report('newcomer cannot see other members'' profiles',
+  exists(select 1 from public.profiles where user_id <> auth.uid()), false);
+select report('newcomer still sees their own profile',
+  exists(select 1 from public.profiles where user_id = auth.uid()), true);
+
 -- ---- the approved member --------------------------------------------
 select act_as('00000000-0000-4000-8000-000000000002');
 select report('member is approved', public.is_approved(), true);
@@ -90,6 +96,8 @@ select act_as('00000000-0000-4000-8000-000000000003');
 select report('once approved, the newcomer reads shared bags',
   exists(select 1 from public.beans where id = 'aaaaaaaa-0000-4000-8000-000000000001'), true);
 select report('approving does not also make them admin', public.is_admin(), false);
+select report('once approved, the newcomer sees the roster',
+  exists(select 1 from public.profiles where user_id <> auth.uid()), true);
 
 -- a member must not be able to edit someone else's bag
 select act_as('00000000-0000-4000-8000-000000000002');

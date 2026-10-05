@@ -22,7 +22,15 @@ await page.click('[data-verify]');
 await page.waitForTimeout(500);
 console.log('short-code msg:', await page.$eval('[data-status]', e => e.textContent.trim()));
 
-// 3. magic-link callback still signs in and unlocks the app
+// 3. a link this browser never asked for is ignored (login CSRF)
+await page.goto(base + '#access_token=evil.tok&refresh_token=r&expires_in=3600&token_type=bearer',
+  { waitUntil: 'networkidle' });
+await page.waitForTimeout(900);
+console.log('unrequested link refused:',
+  await page.evaluate(() => !localStorage.getItem('brewlog.auth.session')));
+
+// 4. a requested magic link still signs in and unlocks the app
+await page.evaluate(() => localStorage.setItem('brewlog.auth.pending', String(Date.now())));
 await page.goto(base + '#access_token=fake.tok&refresh_token=r&expires_in=3600&token_type=bearer',
   { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
@@ -31,7 +39,7 @@ console.log('hash after callback:', await page.evaluate(() => location.hash));
 console.log('tabbar visible:', await page.$eval('#tabbar', e => !e.hidden));
 console.log('beans view rendered:', !!(await page.$('.search-bar')));
 
-// 4. signing out returns to the gate
+// 5. signing out returns to the gate
 await page.evaluate(() => localStorage.removeItem('brewlog.auth.session'));
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(900);

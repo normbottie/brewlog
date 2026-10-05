@@ -255,6 +255,15 @@ export async function downloadImage(src) {
       if (!/^https?:\/\//i.test(String(src))) throw err;
     }
   }
+  /* The public-URL fallback is only for this project's own storage. A row
+     shared by another member could otherwise point at any server, and every
+     member viewing it would quietly fetch from there. */
+  const cfg = getConfig();
+  let origin = '';
+  try { origin = new URL(String(src)).origin; } catch {}
+  if (!cfg || origin !== new URL(cfg.url).origin) {
+    throw new Error('Image is not in this project’s storage');
+  }
   const res = await fetch(src);
   if (!res.ok) throw new Error(`Image download failed (${res.status})`);
   return res.blob();
