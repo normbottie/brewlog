@@ -13,7 +13,7 @@ import {
   AXES, AXIS_LABELS,
 } from '../store.js';
 import { h, esc, icon, sheet, toast, confirmSheet, bindRange } from '../ui.js';
-import { radarSVG } from '../radar.js';
+import { radarSVG, tastingGuide } from '../radar.js';
 import { brewVariants } from '../imaging.js';
 
 /* The most recent brew's method first, then the handful people actually
@@ -111,7 +111,10 @@ export async function brewSheet(bean, existing, onDone) {
 
       <details class="fold" ${firstBrew ? 'open' : ''} data-fold="tasting">
         <summary><span>Tasting profile</span></summary>
-        <div class="glass radar-wrap" data-radar style="margin-top:12px">${radarSVG(brew.ratings)}</div>
+        <div class="glass radar-card" style="margin-top:12px">
+          <div class="radar-wrap" data-radar>${radarSVG(brew.ratings)}</div>
+          ${tastingGuide()}
+        </div>
         <div class="glass card-pad" style="margin-top:12px">
           ${AXES.map(a => `<div class="slider-row">
             <div class="lbl">${AXIS_LABELS[a]}</div>

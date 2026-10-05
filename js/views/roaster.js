@@ -7,7 +7,7 @@
 import { getRoaster, beanImageURL, AXES, AXIS_LABELS, isForeign, membersById, verdictLean } from '../store.js';
 import { h, esc, icon, empty, ownerBadge } from '../ui.js';
 import { thumbIcon } from './brew-sheet.js';
-import { radarSVG } from '../radar.js';
+import { radarSVG, tastingGuide } from '../radar.js';
 
 const one = (n) => Number(n || 0).toFixed(1);
 
@@ -58,7 +58,7 @@ export async function render(root, key) {
            </div>` : ''}
 
       <h2 class="section">Their profile, on average</h2>
-      <div class="glass radar-wrap">${radarSVG(r.ratings)}</div>
+      <div class="glass radar-card"><div class="radar-wrap">${radarSVG(r.ratings)}</div>${tastingGuide()}</div>
       <div class="glass card-pad" style="margin-top:12px">
         ${AXES.map(a => `<div class="slider-row">
           <div class="lbl">${AXIS_LABELS[a]}</div>

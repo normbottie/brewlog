@@ -11,7 +11,7 @@ import {
 } from '../store.js';
 import { brewSheet, thumbIcon } from './brew-sheet.js';
 import { h, esc, icon, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
-import { radarSVG } from '../radar.js';
+import { radarSVG, tastingGuide } from '../radar.js';
 import { shareBeanCard } from '../card.js';
 
 /* Five columns across a phone leaves no room for "Aromatics"; the radar
@@ -159,6 +159,7 @@ export async function render(root, id) {
             <div class="k" title="${esc(AXIS_LABELS[a])}">${esc(AXIS_SHORT[a] || AXIS_LABELS[a])}</div>
           </div>`).join('')}
         </div>
+        ${tastingGuide()}
       </div>
       ${brews.length ? `<div class="hint" style="margin-top:8px;text-align:center">
              Averaged over ${brews.length} brew${brews.length === 1 ? '' : 's'}.

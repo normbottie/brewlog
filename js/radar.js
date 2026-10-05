@@ -83,3 +83,21 @@ export function radarMini(ratings = {}, size = 34) {
     <polygon points="${pts}" fill="rgba(201,168,124,.34)" stroke="#C9A87C" stroke-width="1.4" stroke-linejoin="round"/>
   </svg>`;
 }
+
+/* What each axis means, for anyone new to cupping vocabulary. */
+export const AXIS_HELP = {
+  aromatics: 'What you smell: the dry grounds and the brewed cup. Score how strong and pleasant it is.',
+  acidity: 'Brightness on the tongue, like the tang of citrus or green apple. Lively, not sour.',
+  sweetness: 'Natural sweetness such as caramel, honey or ripe fruit, which softens any harsh edges.',
+  aftertaste: 'The flavour left after you swallow. How long it stays, and whether it stays pleasant.',
+  body: 'Weight and texture in the mouth, from thin and tea-like to heavy and syrupy.',
+};
+
+/** A "?" that folds open to explain the five axes. Uses <details> so it
+    works without JavaScript and survives the radar being redrawn. */
+export function tastingGuide() {
+  return `<details class="radar-help">
+    <summary aria-label="What do these mean?"><span aria-hidden="true">?</span></summary>
+    <dl>${AXES.map(a => `<div><dt>${AXIS_LABELS[a]}</dt><dd>${AXIS_HELP[a]}</dd></div>`).join('')}</dl>
+  </details>`;
+}
