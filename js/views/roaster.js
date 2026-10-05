@@ -4,8 +4,9 @@
    a key. So this page is derived on the fly, and it exists for exactly as long
    as you own a bag from them. */
 
-import { getRoaster, beanImageURL, AXES, AXIS_LABELS, isForeign, membersById } from '../store.js';
-import { h, esc, icon, stars, empty, ownerBadge } from '../ui.js';
+import { getRoaster, beanImageURL, AXES, AXIS_LABELS, isForeign, membersById, verdictLean } from '../store.js';
+import { h, esc, icon, empty, ownerBadge } from '../ui.js';
+import { thumbIcon } from './brew-sheet.js';
 import { radarSVG } from '../radar.js';
 
 const one = (n) => Number(n || 0).toFixed(1);
@@ -41,18 +42,19 @@ export async function render(root, key) {
 
       <div class="glass card-pad stat-row">
         <div class="stat">
-          <div class="big">${r.rated ? one(r.avgOverall) : '—'}</div>
-          <div class="lbl">Average</div>
-          ${r.rated ? `<div style="margin-top:5px">${stars(Math.round(r.avgOverall))}</div>` : ''}
+          <div class="big">${r.verdict ? r.verdict.counts.up : '—'}</div>
+          <div class="lbl">Liked</div>
+          ${r.verdict ? `<div style="margin-top:5px;display:flex;justify-content:center">
+            ${thumbIcon(verdictLean(r.verdict.avg), 15, 'currentColor')}</div>` : ''}
         </div>
         <div class="stat">
           <div class="big">${r.count}</div>
           <div class="lbl">Bag${r.count === 1 ? '' : 's'}</div>
         </div>
       </div>
-      ${r.rated && r.rated < r.count
+      ${r.brewCount
         ? `<div class="hint" style="margin-top:8px;text-align:center">
-             Averaged over the ${r.rated} bag${r.rated === 1 ? '' : 's'} you gave an overall rating.
+             From ${r.brewCount} brew${r.brewCount === 1 ? '' : 's'} logged.
            </div>` : ''}
 
       <h2 class="section">Their profile, on average</h2>
@@ -85,7 +87,7 @@ export async function render(root, key) {
             <div class="nm">${esc(b.name || 'Untitled')}</div>
             <div class="addr">${esc([b.origin, b.process].filter(Boolean).join(' · ') || '—')}</div>
             <div style="margin-top:5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              ${b.overall ? stars(b.overall) : ''}${foreign ? ownerBadge(owner) : ''}
+              ${foreign ? ownerBadge(owner) : ''}
             </div>
           </div>
           <span class="chev">${icon('back')}</span>

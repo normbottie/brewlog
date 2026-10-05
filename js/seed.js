@@ -2,7 +2,7 @@
    The "photos" are drawn on a canvas and then pushed through the real
    studio pipeline, so what you see is what your own photos will look like. */
 
-import { saveBean, saveCafe, blankBean, blankCafe, setBeanImage } from './store.js';
+import { saveBean, saveCafe, blankBean, blankCafe, setBeanImage, blankBrew, saveBrew } from './store.js';
 import { localStudio, fileToImage } from './imaging.js';
 
 const BEANS = [
@@ -179,6 +179,12 @@ export async function seedDemoData() {
     const bean = { ...blankBean(), ...spec };
     delete bean.bag;
     delete bean.cafe;
+    // these now belong to the brew, not the bag
+    delete bean.brew_method;
+    delete bean.grind;
+    delete bean.ratings;
+    delete bean.overall;
+    delete bean.notes;
     bean.cafe_id = cafeIds.get(spec.cafe) || '';
     bean.roast_date = new Date(Date.now() - Math.random() * 26 * 864e5).toISOString().slice(0, 10);
     await saveBean(bean);
@@ -188,6 +194,16 @@ export async function seedDemoData() {
     const img = await fileToImage(rawBlob);
     const studio = await localStudio(img, { backdrop: 'espresso' });
     await setBeanImage(bean.id, studio, rawBlob);
+    n++;
+
+    // one brew, carrying what used to live on the bag itself
+    const brew = blankBrew(bean.id, spec.brew_method || '');
+    brew.grind = spec.grind || '';
+    brew.ratings = { ...spec.ratings };
+    brew.verdict = spec.overall >= 4 ? 'up' : spec.overall <= 2 ? 'down' : 'neutral';
+    brew.notes = spec.notes || '';
+    brew.brewed_on = bean.roast_date;
+    await saveBrew(brew);
     n++;
   }
 

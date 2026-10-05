@@ -20,6 +20,10 @@ export const AXIS_LABELS = {
   body: 'Body',
 };
 
+/* A brew with no tasting profile logged yet starts at the middle of every
+   axis — neither good nor bad, just unanswered. */
+const DEFAULT_RATINGS = { aromatics: 3, acidity: 3, sweetness: 3, aftertaste: 3, body: 3 };
+
 export const BREW_METHODS = [
   'Espresso', 'Latte', 'Cappuccino', 'Cortado', 'Flat White',
   'Drip', 'Pour Over', 'V60', 'Chemex', 'AeroPress',
@@ -54,13 +58,8 @@ export function blankBean() {
     roast_date: '',
     price: '',
     weight_g: '',
-    brew_method: 'Espresso',
-    grind: '',
     cafe_id: '',
     flavor_notes: [],
-    ratings: { aromatics: 3, acidity: 3, sweetness: 3, aftertaste: 3, body: 3 },
-    overall: 0,
-    notes: '',
     image_url: '',
     created_at: now(),
     updated_at: now(),
@@ -174,30 +173,27 @@ export async function getRoaster(key, opts = { shared: true }) {
   const newest = [...beans].sort((a, b) =>
     String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
 
+  const perBean = await Promise.all(beans.map(b => beanAverageRatings(b.id)));
   const ratings = {};
   for (const a of AXES) {
-    const vals = beans.map(b => Number(b.ratings?.[a]) || 0);
+    const vals = perBean.map(r => Number(r[a]) || 0);
     ratings[a] = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
   }
 
-  /* Overall averages over RATED bags only. A bag you haven't scored is not a
-     zero — counting it as one would drag every roaster toward the floor. */
-  const rated = beans.filter(b => Number(b.overall) > 0);
-  const avgOverall = rated.length
-    ? rated.reduce((s, b) => s + Number(b.overall), 0) / rated.length
-    : 0;
+  const allBrews = (await Promise.all(beans.map(b => listBrews(b.id)))).flat();
+  const verdict = verdictAverage(allBrews);
 
   return {
     key: want,
     name: String(newest?.roaster || '').trim(),
     beans,
     count: beans.length,
-    rated: rated.length,
-    avgOverall,
+    brewCount: allBrews.length,
+    verdict,
     ratings,
     origins: uniq(beans.map(b => b.origin)),
     processes: uniq(beans.map(b => b.process)),
-    methods: uniq(beans.map(b => b.brew_method)),
+    methods: uniq(allBrews.map(b => b.method)),
   };
 }
 
@@ -303,11 +299,11 @@ export async function beanImageURL(bean) {
 
 /* ---- brews ---------------------------------------------------------- */
 
-/* One cup on one day. The bag keeps its tasting profile; a brew records
-   what happened this time — with `verdict` left null for most of them,
-   because most cups do not warrant an opinion. */
+/* One cup on one day: how it was brewed, how it tasted, and what you
+   thought of it. `verdict` is 'up', 'neutral', 'down', or null — null is
+   the common case, since most cups do not warrant an opinion. */
 
-export const BREW_VERDICTS = { up: 'Good one', down: 'Not great' };
+export const BREW_VERDICTS = { up: 'Good one', neutral: 'Fine', down: 'Not great' };
 
 export function blankBrew(beanId, method = '') {
   return {
@@ -315,8 +311,10 @@ export function blankBrew(beanId, method = '') {
     bean_id: beanId,
     brewed_on: new Date().toISOString().slice(0, 10),
     method,
+    grind: '',
     recipe: '',
     verdict: null,
+    ratings: { ...DEFAULT_RATINGS },
     notes: '',
     image_url: '',
     thumb_url: '',
@@ -324,6 +322,54 @@ export function blankBrew(beanId, method = '') {
     updated_at: now(),
     deleted: false,
   };
+}
+
+/** 'up' / 'neutral' / 'down' nearest an average verdict score. */
+export function verdictLean(avg) {
+  return avg > 0.15 ? 'up' : avg < -0.15 ? 'down' : 'neutral';
+}
+
+/** Average verdict across a set of brews, or null if none were scored. */
+export function verdictAverage(brews) {
+  const score = { up: 1, neutral: 0, down: -1 };
+  const scored = (brews || []).filter(b => b.verdict in score);
+  if (!scored.length) return null;
+  const counts = { up: 0, neutral: 0, down: 0 };
+  let sum = 0;
+  for (const b of scored) { counts[b.verdict]++; sum += score[b.verdict]; }
+  return { avg: sum / scored.length, count: scored.length, counts };
+}
+
+function averageRatings(brews) {
+  const out = {};
+  for (const a of AXES) {
+    const vals = (brews || []).map(b => Number(b.ratings?.[a])).filter(Number.isFinite);
+    out[a] = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : DEFAULT_RATINGS[a];
+  }
+  return out;
+}
+
+/** A bag's tasting profile: the average of its brews' own profiles — the
+    "compass" on its page moves every time a new one is logged. */
+export async function beanAverageRatings(beanId) {
+  return averageRatings(await listBrews(beanId));
+}
+
+/** Per-bag tasting-profile and verdict averages, for the beans list grid —
+    one pass over every brew rather than one IndexedDB round trip per bag. */
+export async function beanAverages() {
+  const rows = await idb.all('brews');
+  const byBean = new Map();
+  for (const b of rows) {
+    if (b.deleted) continue;
+    if (!byBean.has(b.bean_id)) byBean.set(b.bean_id, []);
+    byBean.get(b.bean_id).push(b);
+  }
+  const out = new Map();
+  for (const [beanId, list] of byBean) {
+    out.set(beanId, { ratings: averageRatings(list), verdict: verdictAverage(list) });
+  }
+  return out;
 }
 
 /** A bag's brews, newest first. */
@@ -430,9 +476,9 @@ export async function brewImageURL(brew, size = 'thumb') {
 /* ---- importing someone else's bag ---------------------------------- */
 
 /* What's printed on the bag comes across; what somebody thought of it does
-   not. Ratings, overall, notes, grind and brew method start blank — the
-   whole point is to record your own findings on the same coffee. Roast date
-   is left out too: their bag is not your bag. */
+   not. A copy starts with no brews of its own — the whole point is to
+   record your own tasting of the same coffee. Roast date is left out too:
+   their bag is not your bag. */
 const BAG_FIELDS = [
   'name', 'roaster', 'origin', 'region', 'process', 'varietal',
   'roast_level', 'weight_g', 'price',

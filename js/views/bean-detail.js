@@ -7,10 +7,10 @@
 import {
   getBean, beanImageURL, removeBean, AXES, AXIS_LABELS, isForeign, membersById,
   importBean, myBeanLike, beanNeighbours, canEdit, listBrews, brewImageURL,
-  cafeForBean, roasterKey,
+  cafeForBean, roasterKey, beanAverageRatings, verdictAverage, verdictLean,
 } from '../store.js';
 import { brewSheet, thumbIcon } from './brew-sheet.js';
-import { h, esc, icon, stars, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
+import { h, esc, icon, fmtDate, confirmSheet, toast, ownerBadge, goReplace, sheet } from '../ui.js';
 import { radarSVG } from '../radar.js';
 import { shareBeanCard } from '../card.js';
 
@@ -34,12 +34,17 @@ function shortWhen(iso) {
 }
 
 function brewSummary(brews) {
-  const up = brews.filter(b => b.verdict === 'up').length;
-  const down = brews.filter(b => b.verdict === 'down').length;
   const last = brews.find(b => b.recipe);
   const bits = [];
   if (last) bits.push(`Last pulled ${last.recipe}`);
-  if (up || down) bits.push([up ? `${up} up` : '', down ? `${down} down` : ''].filter(Boolean).join(', '));
+  const v = verdictAverage(brews);
+  if (v) {
+    bits.push([
+      v.counts.up ? `${v.counts.up} up` : '',
+      v.counts.neutral ? `${v.counts.neutral} fine` : '',
+      v.counts.down ? `${v.counts.down} down` : '',
+    ].filter(Boolean).join(', '));
+  }
   return bits.join(' · ');
 }
 
@@ -62,22 +67,23 @@ export async function render(root, id) {
      photo; the rest go in the grid below rather than repeating. */
   const headFacts = [
     ['Origin', [b.origin, b.region].filter(Boolean).join(' · ')],
-    ['Brewed as', b.brew_method],
   ].filter(([, v]) => v);
+
+  const { prev, next, index, total } = await beanNeighbours(id);
+  const brews = await listBrews(id);
+  const avgRatings = await beanAverageRatings(id);
+  const verdict = verdictAverage(brews);
+  const cafe = await cafeForBean(b);
+  const rKey = roasterKey(b.roaster);
 
   const kv = [
     ['Process', b.process],
     ['Varietal', b.varietal],
     ['Roast', b.roast_level],
     ['Roasted', b.roast_date ? fmtDate(b.roast_date) : ''],
-    ['Grind', b.grind],
+    ['Grind', brews[0]?.grind || ''],
     ['Price', b.price ? (b.weight_g ? `${b.price} · ${b.weight_g}g` : String(b.price)) : ''],
   ].filter(([, v]) => v);
-
-  const { prev, next, index, total } = await beanNeighbours(id);
-  const brews = await listBrews(id);
-  const cafe = await cafeForBean(b);
-  const rKey = roasterKey(b.roaster);
 
   const view = h(`<div>
     <div class="topbar">
@@ -102,7 +108,6 @@ export async function render(root, id) {
             ${b.roaster ? (rKey
               ? `<a class="roaster link" href="#/roaster/${encodeURIComponent(rKey)}">${esc(b.roaster)}</a>`
               : `<div class="roaster">${esc(b.roaster)}</div>`) : ''}
-            ${b.overall ? `<div style="margin-top:7px">${stars(b.overall)}</div>` : ''}
             ${headFacts.length ? `<dl class="head-facts">${headFacts.map(([k, v]) =>
               `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
           </div>
@@ -136,6 +141,10 @@ export async function render(root, id) {
       <div class="brews-head">
         <h2 class="section" style="margin:0">Brews</h2>
         ${brews.length ? `<span class="brews-count">· ${brews.length}</span>` : ''}
+        ${verdict ? `<span title="Average verdict"
+            style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;
+                   border-radius:50%;margin-left:7px;background:rgba(255,255,255,.07);color:var(--tan-bright)">
+            ${thumbIcon(verdictLean(verdict.avg), 12, 'currentColor')}</span>` : ''}
         <div style="flex:1"></div>
         ${brews.length > 3 ? '<button class="linky" data-allbrews>See all</button>' : ''}
       </div>
@@ -143,21 +152,23 @@ export async function render(root, id) {
 
       <h2 class="section">Tasting profile</h2>
       <div class="glass tasting">
-        <div class="radar-wrap">${radarSVG(b.ratings)}</div>
+        <div class="radar-wrap">${radarSVG(avgRatings)}</div>
         <div class="axis-strip">
           ${AXES.map(a => `<div class="axis-stat">
-            <div class="n">${(Number(b.ratings?.[a]) || 0).toFixed(1)}</div>
+            <div class="n">${(Number(avgRatings[a]) || 0).toFixed(1)}</div>
             <div class="k" title="${esc(AXIS_LABELS[a])}">${esc(AXIS_SHORT[a] || AXIS_LABELS[a])}</div>
           </div>`).join('')}
         </div>
       </div>
+      ${brews.length ? `<div class="hint" style="margin-top:8px;text-align:center">
+             Averaged over ${brews.length} brew${brews.length === 1 ? '' : 's'}.
+           </div>` : `<div class="hint" style="margin-top:8px;text-align:center">
+             Log a brew to start its tasting profile.
+           </div>`}
 
       ${kv.length ? `<h2 class="section">Details</h2>
         <div class="kv">${kv.map(([k, v]) =>
           `<div><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>` : ''}
-
-      ${b.notes ? `<h2 class="section">Notes</h2>
-        <div class="glass card-pad"><div class="notes-body">${esc(b.notes)}</div></div>` : ''}
 
       <div style="height:20px"></div>
       <button class="btn-block" data-card>${icon('card')} Make a share card</button>
