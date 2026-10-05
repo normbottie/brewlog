@@ -720,7 +720,24 @@ select {
   backdrop-filter: none; -webkit-backdrop-filter: none;
   display: block;
 }
-.brew-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brew-tile img {
+  position: absolute; inset: 0; z-index: 1;
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.brew-tile img[hidden], .brew-hero img[hidden] { display: none; }
+/* Stands in for a brew logged without a photo, and for one whose photo
+   hasn't arrived yet. The image sits on top and covers it when it lands. */
+.brew-ph {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding-bottom: 12%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(201,168,124,.13), transparent 62%),
+    linear-gradient(178deg, #2a2019, #15100c);
+  color: rgba(201,168,124,.55);
+}
+.brew-ph svg { width: 34%; max-width: 46px; height: auto; }
+.brew-when { z-index: 1; }
 .brew-when {
   position: absolute; left: 0; right: 0; bottom: 0;
   padding: 14px 4px 5px;
@@ -814,6 +831,16 @@ select {
   width: 100%; display: block; aspect-ratio: 1/1; object-fit: cover;
   background: linear-gradient(178deg, #241C17, #14100D);
 }
+.brew-hero .brew-ph {
+  position: relative; aspect-ratio: 1/1; padding-bottom: 0;
+  border-radius: inherit; overflow: hidden;
+}
+.brew-hero .brew-ph svg { max-width: 72px; }
+.brew-hero .brew-ph span {
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  font-weight: 620; color: var(--text-faint);
+}
+.brew-hero .brew-ph:has(+ img:not([hidden])) { display: none; }
 .brew-loading {
   position: absolute; inset: 0; display: grid; place-items: center;
   background: rgba(10,8,6,.35); pointer-events: none;

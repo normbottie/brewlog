@@ -46,8 +46,8 @@ export async function render(root, id) {
         ${total > 1 ? `<button class="pager-btn prev" data-prev aria-label="Previous brew">${icon('back')}</button>
           <button class="pager-btn next" data-next aria-label="Next brew">${icon('back')}</button>` : ''}
         <div class="glass brew-hero">
-          <img data-photo alt="${esc(bean?.name ? `Brew of ${bean.name}` : 'Brew')}"
-               src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+          <div class="brew-ph">${icon('cup')}<span>No photo</span></div>
+          <img data-photo alt="${esc(bean?.name ? `Brew of ${bean.name}` : 'Brew')}" hidden>
           <div class="brew-loading" data-loading><span class="spinner"></span></div>
         </div>
       </div>
@@ -117,10 +117,10 @@ export async function render(root, id) {
   const photo = view.querySelector('[data-photo]');
   const loading = view.querySelector('[data-loading]');
   const thumb = await brewImageURL(brew, 'thumb');
-  if (thumb) photo.src = thumb;
+  if (thumb) { photo.src = thumb; photo.hidden = false; }
 
   brewImageURL(brew, 'full').then(url => {
-    if (url && url !== thumb) photo.src = url;
+    if (url && url !== thumb) { photo.src = url; photo.hidden = false; }
     loading.hidden = true;
   }).catch(() => { loading.hidden = true; });
   if (!brew.image_url) loading.hidden = true;

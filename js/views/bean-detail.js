@@ -278,8 +278,8 @@ export async function render(root, id) {
           ${icon('plus')}<span>Log</span>
         </button>`}
         ${shown.map(x => `<button class="brew-tile" data-brew="${esc(x.id)}">
-          <img data-bimg="${esc(x.id)}" alt=""
-               src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+          <span class="brew-ph">${icon('cup')}</span>
+          <img data-bimg="${esc(x.id)}" alt="" hidden>
           ${x.verdict ? `<span class="brew-verdict ${esc(x.verdict)}">${
             thumbIcon(x.verdict, 11, 'currentColor')}</span>` : ''}
           <span class="brew-when">${esc(shortWhen(x.brewed_on))}</span>
@@ -296,7 +296,7 @@ export async function render(root, id) {
       const url = await brewImageURL(x, 'thumb');
       if (!url) return;
       const img = brewsEl.querySelector(`[data-bimg="${x.id}"]`);
-      if (img) img.src = url;
+      if (img) { img.src = url; img.hidden = false; }
     });
   }
 

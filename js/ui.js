@@ -37,6 +37,9 @@ const ICONS = {
          <path d="M7.6 14.6l3-3.4 2.6 2.6 2-2.2 2.2 3"/><circle cx="9.4" cy="8.4" r="1.3"/></g>`,
   locate: `<g ${STROKE}><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.3"/>
            <path d="M12 2v2.4M12 19.6V22M22 12h-2.4M4.4 12H2"/></g>`,
+  cup: `<g ${STROKE}><path d="M4.5 9.5h12v4.2a5.3 5.3 0 0 1-5.3 5.3H9.8a5.3 5.3 0 0 1-5.3-5.3Z"/>
+        <path d="M16.5 10.8h1.3a2.3 2.3 0 0 1 0 4.6h-1.9M3 21h15"/>
+        <path d="M8.6 3.4c-.7.9-.7 1.8 0 2.7M12.2 3.4c-.7.9-.7 1.8 0 2.7"/></g>`,
 };
 
 export const icon = (name, cls = '') =>
