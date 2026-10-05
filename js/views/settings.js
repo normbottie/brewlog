@@ -484,6 +484,14 @@ export async function render(root) {
       if (counts.photos) bits.push(`${counts.photos} photo${counts.photos === 1 ? '' : 's'}`);
       if (counts.skipped) bits.push(`${counts.skipped} already newer here`);
       toast(`Restored ${bits.join(', ')}`);
+      const k = counts.apiKey;
+      if (k && await confirmSheet('Use the API key in this backup?',
+          `It holds a ${PROVIDERS[k.provider].label} key ending “${k.key.slice(-4)}”. ` +
+          'Only use it if this backup is your own: your bag photos would be sent ' +
+          'with that key, and it would sync to your account.', 'Use this key')) {
+        setImageAPIConfig(k.provider, k.key, k.model);
+        markSettingsDirty();
+      }
       setTimeout(() => { location.hash = '#/beans'; }, 900);
     } catch (err) {
       toast(err.message || 'Import failed');

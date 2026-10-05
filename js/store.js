@@ -1098,13 +1098,17 @@ export async function importBackup(input, onProgress) {
     if (row?.id === id) { row._imgDirty = true; row._dirty = true; await idb.put(table, row); }
   }
 
-  /* Only fill a gap — never overwrite a key this device is already using. */
+  /* An API key in the file is handed back, not installed: a backup from
+     someone else could otherwise quietly route your photos through their
+     key. The caller asks first. Only offered to fill a gap — never to
+     replace a key this device is already using. */
   const s = data.settings;
-  if (s?.key && !getImageAPIConfig()) {
-    try {
-      setImageAPIConfig(s.provider || 'gemini', s.key, s.model || '');
-      markSettingsDirty();
-    } catch {}
+  if (typeof s?.key === 'string' && s.key.trim() && !getImageAPIConfig()) {
+    counts.apiKey = {
+      provider: s.provider === 'openai' ? 'openai' : 'gemini',
+      key: s.key.trim(),
+      model: typeof s.model === 'string' ? s.model : '',
+    };
   }
 
   queueSync(300);
