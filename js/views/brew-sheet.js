@@ -33,8 +33,13 @@ const fmtR = (v) => Number(v ?? 0).toFixed(1);
    the root element moves the whole box in its parent's coordinates, which
    just carried the thumbs-down out of view. */
 export function thumbIcon(dirn, size = 11, color = '#E4C79A') {
-  const rot = dirn === 'down' ? ' transform="rotate(180 12 12)"'
-    : dirn === 'neutral' ? ' transform="rotate(90 12 12)"' : '';
+  // "Fine" is a tilde: a sideways thumb read as a gesture, not a middle.
+  if (dirn === 'neutral') {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="${color}" stroke-width="2.2" stroke-linecap="round">
+      <path d="M4 14C6 9.5 9.5 9.5 12 12s6 2.5 8-2"/></svg>`;
+  }
+  const rot = dirn === 'down' ? ' transform="rotate(180 12 12)"' : '';
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
     stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <g${rot}>

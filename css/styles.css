@@ -832,7 +832,7 @@ select {
   background: linear-gradient(178deg, #241C17, #14100D);
 }
 .brew-hero .brew-ph {
-  position: relative; aspect-ratio: 1/1; padding-bottom: 0;
+  position: relative; aspect-ratio: 5/2; min-height: 150px; padding-bottom: 0;
   border-radius: inherit; overflow: hidden;
 }
 .brew-hero .brew-ph svg { max-width: 72px; }
