@@ -4,7 +4,7 @@
    of glass and blur that no canvas can reproduce, and a 1080×1350 portrait is
    what actually reads on a phone screen once it's been sent to someone. */
 
-import { AXES, AXIS_LABELS, beanImageURL } from './store.js';
+import { AXES, AXIS_LABELS, beanImageURL, beanAverageRatings, listBrews } from './store.js';
 import { h, esc, sheet, toast } from './ui.js';
 
 const W = 1080;
@@ -21,9 +21,6 @@ const C = {
   tan: '#C9A87C',
   tanBright: '#E4C79A',
 };
-
-const STAR_PATH =
-  'M12 2.6l2.85 5.94 6.4.9-4.64 4.6 1.11 6.5L12 17.48 6.28 20.54l1.1-6.5-4.63-4.6 6.4-.9z';
 
 /* ---- little canvas helpers ----------------------------------------- */
 
@@ -60,22 +57,6 @@ function wrap(ctx, text, max, lines = 2) {
     }
   }
   return out;
-}
-
-function drawStars(ctx, value, cx, y, size) {
-  const gap = size * 0.18;
-  const total = 5 * size + 4 * gap;
-  let x = cx - total / 2;
-  const path = new Path2D(STAR_PATH);
-  for (let i = 1; i <= 5; i++) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(size / 24, size / 24);
-    ctx.fillStyle = i <= value ? C.tanBright : 'rgba(246,238,228,0.16)';
-    ctx.fill(path);
-    ctx.restore();
-    x += size + gap;
-  }
 }
 
 /** Cover-crop an image into a box, the way object-fit: cover does. */
@@ -281,6 +262,10 @@ export async function beanCardBlob(bean, { cafe = null } = {}) {
     if (url && url.startsWith('blob:')) img = await loadImage(url);
   } catch { /* the card stands without the photo */ }
 
+  // the compass is the average of every brew logged against this bag
+  const brews = await listBrews(bean.id);
+  const avgRatings = await beanAverageRatings(bean.id);
+
   drawBackground(ctx);
 
   /* The title is measured before anything is drawn: a name that wraps to two
@@ -313,11 +298,6 @@ export async function beanCardBlob(bean, { cafe = null } = {}) {
     y += 42;
   }
 
-  if (bean.overall) {
-    drawStars(ctx, bean.overall, PAD + 5 * 22, y + 18, 40);
-    y += 62;
-  }
-
   y += 26;
 
   /* Radar on the left, the same numbers spelled out on the right — the shape
@@ -325,9 +305,9 @@ export async function beanCardBlob(bean, { cafe = null } = {}) {
   const radarR = 148;
   const radarCX = PAD + radarR + 22;
   const radarCY = y + radarR + 10;
-  drawRadar(ctx, bean.ratings, radarCX, radarCY, radarR);
+  drawRadar(ctx, avgRatings, radarCX, radarCY, radarR);
   const barsX = radarCX + radarR + 74;
-  const barsBottom = drawAxisBars(ctx, bean.ratings, barsX, y + 12, W - PAD - barsX);
+  const barsBottom = drawAxisBars(ctx, avgRatings, barsX, y + 12, W - PAD - barsX);
   y = Math.max(radarCY + radarR + 30, barsBottom + 16);
 
   y = drawChips(ctx, (bean.flavor_notes || []).slice(0, 4), y + 6) + 34;
@@ -339,7 +319,7 @@ export async function beanCardBlob(bean, { cafe = null } = {}) {
   ctx.fillStyle = C.tan;
   ctx.fillText('Brewlog', PAD, footY);
 
-  const where = [cafe?.name, bean.brew_method].filter(Boolean).join(' · ');
+  const where = [cafe?.name, brews[0]?.method].filter(Boolean).join(' · ');
   if (where) {
     ctx.font = `400 27px ${FONT}`;
     ctx.textAlign = 'right';

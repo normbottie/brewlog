@@ -23,7 +23,8 @@ function methodChoices(beanMethod) {
    the root element moves the whole box in its parent's coordinates, which
    just carried the thumbs-down out of view. */
 export function thumbIcon(dirn, size = 11, color = '#E4C79A') {
-  const rot = dirn === 'down' ? ' transform="rotate(180 12 12)"' : '';
+  const rot = dirn === 'down' ? ' transform="rotate(180 12 12)"'
+    : dirn === 'neutral' ? ' transform="rotate(90 12 12)"' : '';
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
     stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <g${rot}>
@@ -38,16 +39,22 @@ export function thumbIcon(dirn, size = 11, color = '#E4C79A') {
  * @param {object|null} existing  a brew to edit, or null for a new one
  * @param {Function} onDone
  */
-export function brewSheet(bean, existing, onDone) {
+export async function brewSheet(bean, existing, onDone) {
+  const siblings = await listBrews(bean.id);
+  const priorBrews = siblings.filter(b => !existing || b.id !== existing.id);
+  // nothing to average yet on a bag's very first brew — open the tile for
+  // it, and let every brew after that start out of the way
+  const firstBrew = priorBrews.length === 0;
+
   const brew = existing
-    ? { ...existing }
-    : blankBrew(bean.id, bean.brew_method || 'Espresso');
+    ? { ...existing, ratings: { ...existing.ratings } }
+    : blankBrew(bean.id, priorBrews[0]?.method || '');
   const isNew = !existing;
   let pending = null;      // { thumb, full } not yet stored
   let previewURL = null;
 
   return sheet(isNew ? 'Log a brew' : 'Edit brew', (close) => {
-    const methods = methodChoices(bean.brew_method);
+    const methods = methodChoices(priorBrews[0]?.method || '');
     if (brew.method && !methods.includes(brew.method)) methods.unshift(brew.method);
 
     const node = h(`<div>
@@ -59,7 +66,7 @@ export function brewSheet(bean, existing, onDone) {
         <img data-preview hidden alt="">
         <div data-empty>
           ${icon('camera')}
-          <div style="font-weight:600;font-size:15px;margin-top:8px">Take a photo of the cup</div>
+          <div style="font-weight:600;font-size:15px;margin-top:8px">Take a photo of the cup (optional)</div>
           <div class="hint" style="margin-top:4px">Or choose one from your library.</div>
         </div>
       </button>
@@ -80,23 +87,45 @@ export function brewSheet(bean, existing, onDone) {
           <input id="b-date" type="date" data-date value="${esc(brew.brewed_on || '')}">
         </div>
         <div class="field">
-          <label for="b-recipe">Recipe</label>
-          <input id="b-recipe" data-recipe placeholder="18 g → 38 g, 27 s"
-                 value="${esc(brew.recipe || '')}">
+          <label for="b-grind">Grind</label>
+          <input id="b-grind" data-grind placeholder="18g in, 38g out, 27s"
+                 value="${esc(brew.grind || '')}">
         </div>
       </div>
 
       <div class="field">
+        <label for="b-recipe">Recipe</label>
+        <input id="b-recipe" data-recipe placeholder="18 g → 38 g, 27 s"
+               value="${esc(brew.recipe || '')}">
+      </div>
+
+      <details class="fold" ${firstBrew ? 'open' : ''} data-fold="tasting">
+        <summary><span>Tasting profile</span></summary>
+        <div class="glass radar-wrap" data-radar style="margin-top:12px">${radarSVG(brew.ratings)}</div>
+        <div class="glass card-pad" style="margin-top:12px">
+          ${AXES.map(a => `<div class="slider-row">
+            <div class="lbl">${AXIS_LABELS[a]}</div>
+            <input type="range" min="0" max="5" step="0.1" value="${brew.ratings[a]}" data-axis="${a}"
+                   aria-label="${AXIS_LABELS[a]}">
+            <div class="val" data-axisval="${a}">${fmtR(brew.ratings[a])}</div>
+          </div>`).join('')}
+        </div>
+      </details>
+
+      <div class="field" style="margin-top:16px">
         <label>How did this one go?</label>
         <div class="verdict" data-verdict>
           <button type="button" data-v="up" aria-pressed="${brew.verdict === 'up'}">
             ${thumbIcon('up', 21, 'currentColor')} Good one
           </button>
+          <button type="button" data-v="neutral" aria-pressed="${brew.verdict === 'neutral'}">
+            ${thumbIcon('neutral', 21, 'currentColor')} Fine
+          </button>
           <button type="button" data-v="down" aria-pressed="${brew.verdict === 'down'}">
             ${thumbIcon('down', 21, 'currentColor')} Not great
           </button>
         </div>
-        <div class="hint">Optional, and it stays on this cup — the bag keeps its own tasting profile.</div>
+        <div class="hint">Optional. The bag's average updates to match whenever you log one.</div>
       </div>
 
       <div class="field">
@@ -152,6 +181,17 @@ export function brewSheet(bean, existing, onDone) {
         x.setAttribute('aria-pressed', String(x.dataset.m === brew.method)));
     });
 
+    const radarBox = node.querySelector('[data-radar]');
+    node.querySelectorAll('[data-axis]').forEach(inp => {
+      bindRange(inp);
+      inp.addEventListener('input', () => {
+        const a = inp.dataset.axis;
+        brew.ratings[a] = Math.round(Number(inp.value) * 10) / 10;
+        node.querySelector(`[data-axisval="${a}"]`).textContent = fmtR(brew.ratings[a]);
+        radarBox.innerHTML = radarSVG(brew.ratings);
+      });
+    });
+
     node.querySelector('[data-verdict]').addEventListener('click', (e) => {
       const b = e.target.closest('[data-v]');
       if (!b) return;
@@ -172,13 +212,10 @@ export function brewSheet(bean, existing, onDone) {
     node.querySelector('[data-save]').onclick = async (e) => {
       const btn = e.currentTarget;
       brew.brewed_on = node.querySelector('[data-date]').value;
+      brew.grind = node.querySelector('[data-grind]').value.trim();
       brew.recipe = node.querySelector('[data-recipe]').value.trim();
       brew.notes = node.querySelector('[data-notes]').value;
 
-      if (isNew && !pending) {
-        status.textContent = 'Add a photo of the cup first.';
-        return;
-      }
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span>Saving…';
       try {

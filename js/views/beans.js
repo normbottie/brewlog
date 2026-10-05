@@ -2,9 +2,10 @@
 
 import {
   listBeans, beanImageURL, syncState, membersById, sharingMembers, isForeign,
-  SCOPE_KEYS, scopeShared, brewCounts, roasterKey,
+  SCOPE_KEYS, scopeShared, brewCounts, roasterKey, beanAverages,
 } from '../store.js';
-import { h, esc, icon, stars, empty, ownerBadge, memberColor } from '../ui.js';
+import { h, esc, icon, empty, ownerBadge, memberColor } from '../ui.js';
+import { thumbIcon } from './brew-sheet.js';
 import { radarMini } from '../radar.js';
 import { matches } from '../search.js';
 
@@ -17,9 +18,9 @@ export async function render(root) {
   const beans = await listBeans({ shared: state.shared });
   const members = membersById();
   const brewsPerBag = await brewCounts();
+  const averages = await beanAverages();
 
   const roasters = [...new Set(beans.map(b => b.roaster).filter(Boolean))].sort();
-  const brews = [...new Set(beans.map(b => b.brew_method).filter(Boolean))].sort();
 
   const view = h(`<div>
     <div class="topbar">
@@ -56,8 +57,7 @@ export async function render(root) {
 
   const filters = [
     { k: 'all', label: 'All' },
-    { k: 'top', label: '★ 4+' },
-    ...brews.map(b => ({ k: 'brew:' + b, label: b })),
+    { k: 'top', label: 'Liked' },
     ...roasters.map(r => ({ k: 'roaster:' + r, label: r })),
   ];
 
@@ -88,12 +88,11 @@ export async function render(root) {
 
   function match(b) {
     const hay = [b.name, b.roaster, b.origin, b.region, b.process, b.varietal,
-      b.notes, b.brew_method, (b.flavor_notes || []).join(' ')];
+      (b.flavor_notes || []).join(' ')];
     if (!matches(hay, state.q)) return false;
     const f = state.filter;
     if (f === 'all') return true;
-    if (f === 'top') return (b.overall || 0) >= 4;
-    if (f.startsWith('brew:')) return b.brew_method === f.slice(5);
+    if (f === 'top') return (averages.get(b.id)?.verdict?.avg ?? -1) > 0.15;
     if (f.startsWith('roaster:')) return b.roaster === f.slice(8);
     return true;
   }
@@ -135,6 +134,7 @@ export async function render(root) {
   function card(b) {
     const foreign = isForeign(b);
     const owner = foreign ? members.get(b.user_id) : null;
+    const avg = averages.get(b.id);
     return `<button class="glass bean-card ${foreign ? 'shared' : ''}"
         ${foreign ? `style="--owner:${memberColor(owner?._slot ?? -1)}"` : ''}
         data-go="#/bean/${esc(b.id)}">
@@ -150,10 +150,11 @@ export async function render(root) {
         <div class="roaster">${esc(b.roaster || '—')}</div>
         ${foreign ? `<div style="margin-top:5px">${ownerBadge(owner)}</div>` : ''}
         <div class="row">
-          ${radarMini(b.ratings)}
+          ${radarMini(avg?.ratings)}
           <div style="flex:1;min-width:0">
-            ${b.overall ? stars(b.overall) : ''}
-            <div class="roaster" style="margin-top:2px">${esc(b.brew_method || '')}</div>
+            ${avg?.verdict ? `<span style="display:inline-flex;align-items:center;gap:5px;color:var(--tan-bright)">
+              ${thumbIcon(avg.verdict.avg > 0.15 ? 'up' : avg.verdict.avg < -0.15 ? 'down' : 'neutral', 13, 'currentColor')}
+            </span>` : ''}
           </div>
         </div>
       </div>
